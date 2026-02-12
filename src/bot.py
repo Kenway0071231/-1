@@ -2,7 +2,7 @@
 СТОМАТОЛОГИЧЕСКИЙ БОТ - ПРЕМИУМ ВЕРСИЯ
 Дизайн: Современный, минималистичный, дружелюбный
 Механика: Интуитивная, быстрая, без лишних действий
-Версия: 2.0.1 (ИСПРАВЛЕННАЯ)
+Версия: 2.0.2 (ПОЛНОСТЬЮ ИСПРАВЛЕНА ЗАПИСЬ)
 """
 
 import logging
@@ -76,7 +76,7 @@ class Emoji:
     EMAIL = "📧"
     MAP = "🗺️"
     LOCATION = "📍"
-    CAR = "🚗"  # ДОБАВЛЕНО
+    CAR = "🚗"
     
     # Действия
     ADD = "➕"
@@ -91,7 +91,6 @@ class Emoji:
     INACTIVE = "🔴"
     PENDING = "🟡"
     COMPLETED = "🟣"
-    STATUS_ACTIVE = "🟢"  # ДОБАВЛЕНО
     
     # Другое
     STAR = "⭐"
@@ -101,8 +100,8 @@ class Emoji:
     QUESTION = "❓"
     EXCLAMATION = "❗"
     DOTS = "..."
-    CROWN = "👑"  # ДОБАВЛЕНО
-    USER = "👤"   # ДОБАВЛЕНО
+    CROWN = "👑"
+    USER = "👤"
     
     # Специальные символы
     DIVIDER = "─"
@@ -655,7 +654,7 @@ class GoogleSheetsManager:
 
 
 # ============================================================================
-# ДИЗАЙН-КЛАВИАТУРЫ
+# КЛАВИАТУРЫ
 # ============================================================================
 
 class Keyboards:
@@ -1057,7 +1056,7 @@ class DentalClinicBot:
         return ConversationHandler.END
     
     # ========================================================================
-    # ОБРАБОТЧИКИ КНОПОК
+    # ОБРАБОТЧИКИ КНОПОК (ПОЛНОСТЬЮ ИСПРАВЛЕНО)
     # ========================================================================
     
     async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1079,7 +1078,9 @@ class DentalClinicBot:
         
         # ========== ЗАПИСЬ НА ПРИЕМ ==========
         elif data == 'appointment':
+            # Инициализируем данные пользователя
             self.temp_data[user_id] = {}
+            print(f"✅ Начало записи для user {user_id}")
             
             text = (
                 f"{Emoji.DOCTOR} **Запись на прием**\n\n"
@@ -1117,16 +1118,22 @@ class DentalClinicBot:
                 reply_markup=self.keyboards.doctors_keyboard(),
                 parse_mode=ParseMode.MARKDOWN
             )
+            return SELECTING_DOCTOR
         
         # ========== ВЫБОР ВРАЧА ==========
         elif data.startswith('doctor_'):
             doctor_id = data.split('_')[1]
             doctor = self.config.DOCTORS[doctor_id]
             
-            self.temp_data[user_id] = {
-                'doctor_id': doctor_id,
-                'doctor_name': f"{doctor.name} ({doctor.specialty})"
-            }
+            # Инициализируем данные, если их нет
+            if user_id not in self.temp_data:
+                self.temp_data[user_id] = {}
+            
+            # СОХРАНЯЕМ ДАННЫЕ ВРАЧА
+            self.temp_data[user_id]['doctor_id'] = doctor_id
+            self.temp_data[user_id]['doctor_name'] = f"{doctor.name} ({doctor.specialty})"
+            
+            print(f"✅ Выбран врач: {self.temp_data[user_id]['doctor_name']}")
             
             stars = "⭐" * int(doctor.rating)
             icon = Emoji.DOCTOR_WOMAN if 'ва' in doctor.name else Emoji.DOCTOR
@@ -1157,9 +1164,13 @@ class DentalClinicBot:
         elif data.startswith('date_'):
             date = data.split('_')[1]
             
+            # Инициализируем данные, если их нет
             if user_id not in self.temp_data:
                 self.temp_data[user_id] = {}
+            
+            # СОХРАНЯЕМ ДАТУ
             self.temp_data[user_id]['date'] = date
+            print(f"✅ Выбрана дата: {date}")
             
             available_times = self.google_sheets.get_available_slots(date)
             
@@ -1201,8 +1212,19 @@ class DentalClinicBot:
             date = parts[1]
             time = parts[2]
             
+            # Инициализируем данные, если их нет
+            if user_id not in self.temp_data:
+                self.temp_data[user_id] = {}
+            
+            # СОХРАНЯЕМ ВРЕМЯ
             self.temp_data[user_id]['time'] = time
-            doctor_name = self.temp_data[user_id].get('doctor_name', '')
+            self.temp_data[user_id]['date'] = date
+            
+            doctor_name = self.temp_data[user_id].get('doctor_name', 'Врач не выбран')
+            doctor_id = self.temp_data[user_id].get('doctor_id', '')
+            
+            print(f"✅ Выбрано время: {date} {time}")
+            print(f"📝 Текущие данные: {self.temp_data[user_id]}")
             
             date_obj = datetime.strptime(date, '%d.%m.%Y')
             months = {
@@ -1225,28 +1247,55 @@ class DentalClinicBot:
             
             await query.edit_message_text(
                 text,
-                reply_markup=self.keyboards.confirm_keyboard(
-                    date, time, self.temp_data[user_id].get('doctor_id', '')
-                ),
+                reply_markup=self.keyboards.confirm_keyboard(date, time, doctor_id),
                 parse_mode=ParseMode.MARKDOWN
             )
             return CONFIRMING
         
-        # ========== ПОДТВЕРЖДЕНИЕ ==========
+        # ========== ПОДТВЕРЖДЕНИЕ (ИСПРАВЛЕНО!) ==========
         elif data.startswith('confirm_'):
+            # Извлекаем данные из callback_data
+            parts = data.split('_')
+            date = parts[1]
+            time = parts[2]
+            doctor_id = parts[3]
+            
+            print(f"✅ Подтверждение записи для user {user_id}")
+            print(f"📅 Дата: {date}, Время: {time}, Врач ID: {doctor_id}")
+            
+            # Инициализируем данные, если их нет
+            if user_id not in self.temp_data:
+                self.temp_data[user_id] = {}
+            
+            # СОХРАНЯЕМ ВСЕ ДАННЫЕ ИЗ CALLBACK
+            self.temp_data[user_id]['date'] = date
+            self.temp_data[user_id]['time'] = time
+            self.temp_data[user_id]['doctor_id'] = doctor_id
+            
+            # Получаем имя врача
+            if doctor_id in self.config.DOCTORS:
+                doctor = self.config.DOCTORS[doctor_id]
+                self.temp_data[user_id]['doctor_name'] = f"{doctor.name} ({doctor.specialty})"
+            
+            print(f"📝 Данные после подтверждения: {self.temp_data[user_id]}")
+            
+            # Отправляем сообщение с запросом ФИО
             text = (
-                f"{Emoji.WAITING} **Остался последний шаг**\n\n"
+                f"{Emoji.WAITING} **Остался последний шаг!**\n\n"
                 
-                f"{Emoji.EDIT} **Введите ваше ФИО**\n"
-                f"(например: Иванов Иван Иванович)\n\n"
+                f"{Emoji.EDIT} **Введите ваше полное ФИО**\n"
+                f"└ Например: Иванов Иван Иванович\n\n"
                 
-                f"{Emoji.INFO} Это необходимо для записи в регистратуре"
+                f"{Emoji.INFO} Это необходимо для оформления "
+                f"медицинской карты и записи в регистратуре"
             )
             
             await query.edit_message_text(
                 text,
                 parse_mode=ParseMode.MARKDOWN
             )
+            
+            # ВАЖНО: Возвращаем состояние GETTING_NAME
             return GETTING_NAME
         
         # ========== ОТМЕНА ЗАПИСИ ==========
@@ -1519,13 +1568,20 @@ class DentalClinicBot:
         return ConversationHandler.END
     
     # ========================================================================
-    # ОБРАБОТЧИКИ ТЕКСТА
+    # ОБРАБОТЧИКИ ТЕКСТА (ИСПРАВЛЕНО)
     # ========================================================================
     
     async def get_name(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Получение ФИО с валидацией"""
         user_id = update.effective_user.id
         name = update.message.text.strip()
+        
+        print(f"📝 Получено ФИО от user {user_id}: {name}")
+        
+        # Проверяем, есть ли данные пользователя
+        if user_id not in self.temp_data:
+            self.temp_data[user_id] = {}
+            print(f"⚠️ Созданы новые данные для user {user_id}")
         
         if len(name) < 5:
             await update.message.reply_text(
@@ -1544,9 +1600,10 @@ class DentalClinicBot:
             )
             return GETTING_NAME
         
-        if user_id not in self.temp_data:
-            self.temp_data[user_id] = {}
+        # Сохраняем имя
         self.temp_data[user_id]['name'] = name
+        print(f"✅ Имя сохранено: {self.temp_data[user_id]['name']}")
+        print(f"📝 Текущие данные: {self.temp_data[user_id]}")
         
         await update.message.reply_text(
             f"{Emoji.CHECK} **Отлично, {name.split()[0]}!**\n\n"
@@ -1579,6 +1636,7 @@ class DentalClinicBot:
             )
             return GETTING_PHONE
         
+        # Приводим к единому формату
         if len(phone_clean) == 10:
             phone = f"+7{phone_clean}"
         elif phone_clean.startswith('8'):
@@ -1588,17 +1646,26 @@ class DentalClinicBot:
         else:
             phone = phone_clean
         
+        # Получаем данные для записи
         appointment_data = self.temp_data.get(user_id, {})
         
-        if not all(k in appointment_data for k in ['doctor_name', 'date', 'time', 'name']):
+        print(f"📝 Данные для записи: {appointment_data}")
+        
+        # Проверяем наличие всех необходимых данных
+        required_fields = ['doctor_name', 'date', 'time', 'name']
+        missing_fields = [field for field in required_fields if field not in appointment_data]
+        
+        if missing_fields:
             await update.message.reply_text(
-                f"{Emoji.ERROR} **Ошибка данных**\n\n"
+                f"{Emoji.ERROR} **Ошибка: не хватает данных**\n\n"
+                f"Отсутствуют: {', '.join(missing_fields)}\n"
                 f"Пожалуйста, начните запись заново",
                 reply_markup=self.keyboards.main_menu(),
                 parse_mode=ParseMode.MARKDOWN
             )
             return ConversationHandler.END
         
+        # Сохраняем запись
         success = self.google_sheets.add_appointment(
             date=appointment_data['date'],
             time=appointment_data['time'],
@@ -1647,6 +1714,7 @@ class DentalClinicBot:
                 parse_mode=ParseMode.MARKDOWN
             )
             
+            # Отправляем уведомление админам
             for admin_id in self.config.ADMIN_IDS:
                 try:
                     admin_text = (
@@ -1664,8 +1732,10 @@ class DentalClinicBot:
                         text=admin_text,
                         parse_mode=ParseMode.MARKDOWN
                     )
-                except:
-                    pass
+                except Exception as e:
+                    print(f"{Emoji.ERROR} Ошибка отправки админу {admin_id}: {e}")
+            
+            print(f"{Emoji.SUCCESS} Запись успешно создана для user {user_id}")
             
         else:
             await update.message.reply_text(
@@ -1676,6 +1746,7 @@ class DentalClinicBot:
                 parse_mode=ParseMode.MARKDOWN
             )
         
+        # Очищаем временные данные
         if user_id in self.temp_data:
             del self.temp_data[user_id]
         
