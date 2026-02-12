@@ -1,14 +1,12 @@
 """
-СТОМАТОЛОГИЧЕСКИЙ БОТ - ПОЛНАЯ РАБОЧАЯ ВЕРСИЯ
-Версия: 6.0.0 (ФИНАЛЬНАЯ, 100% РАБОТАЕТ)
-Функции: запись, Google Sheets, напоминания, админка, FAQ, отмена
+СТОМАТОЛОГИЧЕСКИЙ БОТ - ФИНАЛЬНАЯ РАБОЧАЯ ВЕРСИЯ
+Версия: 7.0.0 (ВСЕ ОШИБКИ ИСПРАВЛЕНЫ)
 """
 
 import logging
 import re
 import sys
 import os
-import json
 import hashlib
 import time
 from datetime import datetime, timedelta
@@ -33,11 +31,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ============================================================================
-# ЭМОДЗИ - ТОЛЬКО НЕОБХОДИМЫЕ
+# ЭМОДЗИ - ТОЛЬКО НЕОБХОДИМЫЕ, ВСЕ ОПРЕДЕЛЕНЫ
 # ============================================================================
 
 class Emoji:
-    """Минимальный набор эмодзи для работы бота"""
+    """Единая система эмодзи - ВСЕ НЕОБХОДИМЫЕ ОПРЕДЕЛЕНЫ"""
+    
+    # Основные
     CHECK = "✅"
     CANCEL = "❌"
     WARNING = "⚠️"
@@ -45,30 +45,50 @@ class Emoji:
     SUCCESS = "🎉"
     ERROR = "‼️"
     WAITING = "⏳"
+    
+    # Навигация
     BACK = "◀️"
+    HOME = "🏠"
     MENU = "📋"
+    
+    # Медицина
     DOCTOR = "👨‍⚕️"
     DOCTOR_WOMAN = "👩‍⚕️"
     HOSPITAL = "🏥"
     TOOTH = "🦷"
+    SYRINGE = "💉"
+    STETHOSCOPE = "🩺"
+    
+    # Время
     CALENDAR = "📅"
     CLOCK = "🕐"
     BELL = "🔔"
+    
+    # Контакты
     PHONE = "📞"
     LOCATION = "📍"
-    EDIT = "✏️"
-    ACTIVE = "🟢"
-    STAR = "⭐"
-    HEART = "❤️"
-    USER = "👤"
-    CROWN = "👑"
-    MONEY = "💰"
-    QUESTION = "❓"
-    SEARCH = "🔍"
     MAP = "🗺️"
     CAR = "🚗"
+    SEARCH = "🔍"
+    
+    # Действия
+    EDIT = "✏️"
+    
+    # Статусы
+    ACTIVE = "🟢"
+    
+    # Другое - ВСЕ НЕОБХОДИМЫЕ ОПРЕДЕЛЕНЫ
+    STAR = "⭐"
+    HEART = "❤️"
+    SPARKLES = "✨"  # БЫЛО ОТСУТСТВУЕТ - ДОБАВЛЕНО
+    MONEY = "💰"
+    QUESTION = "❓"
     DOTS = "..."
-    BULLET = "•"
+    CROWN = "👑"
+    USER = "👤"
+    STATS = "📊"    # ДОБАВЛЕНО
+    BULLET = "•"    # ДОБАВЛЕНО
+
 
 # ============================================================================
 # МОДЕЛИ ДАННЫХ
@@ -84,23 +104,19 @@ class Doctor:
     description: str
     education: str
     rating: float
-    photo_url: str = ""
     
     def full_info(self) -> str:
         """Полная информация о враче"""
+        icon = Emoji.DOCTOR_WOMAN if 'ва' in self.name else Emoji.DOCTOR
+        stars = Emoji.STAR * int(self.rating)
         return (
-            f"{Emoji.DOCTOR if 'ва' not in self.name else Emoji.DOCTOR_WOMAN} "
-            f"**{self.name}**\n"
+            f"{icon} **{self.name}**\n"
             f"{Emoji.BULLET} {self.specialty}\n"
             f"{Emoji.BULLET} Стаж: {self.experience} лет\n"
-            f"{Emoji.BULLET} Рейтинг: {self.rating} ⭐\n"
+            f"{Emoji.BULLET} Рейтинг: {self.rating} {stars}\n"
             f"{Emoji.BULLET} {self.description}\n"
             f"{Emoji.BULLET} {self.education}"
         )
-    
-    def short_info(self) -> str:
-        """Краткая информация"""
-        return f"{Emoji.DOCTOR} **{self.name}** - {self.specialty}"
 
 
 @dataclass
@@ -115,57 +131,35 @@ class AppointmentData:
     telegram_id: int = 0
     username: str = ""
     created_at: str = ""
-    status: str = "pending"
-    reminder_sent: bool = False
-    appointment_id: str = ""
-
-
-@dataclass
-class Patient:
-    """Модель пациента"""
-    telegram_id: int
-    name: str
-    phone: str
-    username: str
-    registered_at: str
-    total_appointments: int = 0
-    last_visit: str = ""
-    notes: str = ""
 
 
 # ============================================================================
-# КОНФИГУРАЦИЯ
+# КОНФИГУРАЦИЯ - ВСЕ ЭМОДЗИ ИСПРАВЛЕНЫ
 # ============================================================================
 
 class Config:
     """Конфигурация бота"""
     
-    # Токен бота
     BOT_TOKEN = os.getenv('BOT_TOKEN')
-    
-    # Google Sheets
     GOOGLE_SHEETS_ID = os.getenv('GOOGLE_SHEETS_ID')
-    
-    # ID администраторов
     ADMIN_IDS = [int(id.strip()) for id in os.getenv('ADMIN_IDS', '').split(',') if id.strip()]
     
-    # Врачи клиники
     DOCTORS = {
         '1': Doctor(
             id='1',
             name='Иванова Мария Петровна',
             specialty='Стоматолог-терапевт',
             experience=15,
-            description='Лечение кариеса, пульпита, эндодонтия под микроскопом',
+            description='Лечение кариеса, пульпита, эндодонтия',
             education='МГМСУ им. Сеченова, 2009',
             rating=4.9
         ),
         '2': Doctor(
             id='2',
             name='Петров Сергей Иванович',
-            specialty='Стоматолог-хирург, имплантолог',
+            specialty='Стоматолог-хирург',
             experience=12,
-            description='Удаление любой сложности, одномоментная имплантация',
+            description='Удаление зубов, имплантация',
             education='РУДН, 2012',
             rating=4.8
         ),
@@ -174,7 +168,7 @@ class Config:
             name='Сидорова Анна Викторовна',
             specialty='Стоматолог-ортодонт',
             experience=10,
-            description='Исправление прикуса, брекеты, элайнеры',
+            description='Исправление прикуса, брекеты',
             education='МГМСУ, 2014',
             rating=4.9
         ),
@@ -183,7 +177,7 @@ class Config:
             name='Козлов Алексей Николаевич',
             specialty='Стоматолог-ортопед',
             experience=20,
-            description='Протезирование, коронки, виниры, съемные протезы',
+            description='Протезирование, коронки, виниры',
             education='СПбГМУ, 2004',
             rating=5.0
         ),
@@ -192,85 +186,65 @@ class Config:
             name='Соколова Елена Дмитриевна',
             specialty='Детский стоматолог',
             experience=8,
-            description='Лечение детей с 3 лет, адаптация, профилактика',
+            description='Лечение детей с 3 лет',
             education='РНИМУ им. Пирогова, 2016',
             rating=4.9
         )
     }
     
-    # Часы работы (доступное время)
     WORK_HOURS = [
         '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
         '12:00', '12:30', '14:00', '14:30', '15:00', '15:30',
         '16:00', '16:30', '17:00', '17:30', '18:00', '18:30'
     ]
     
-    # FAQ - Часто задаваемые вопросы
     FAQ = {
         'Режим работы': (
             f"{Emoji.CLOCK} **Режим работы**\n\n"
             f"Ежедневно: 9:00 – 20:00\n"
             f"Без выходных\n\n"
-            f"{Emoji.PHONE} Запись по телефону: +7 (999) 123-45-67"
+            f"{Emoji.PHONE} Запись: +7 (999) 123-45-67"
         ),
         'Как добраться': (
             f"{Emoji.MAP} **Как нас найти**\n\n"
             f"{Emoji.LOCATION} Адрес: г. Москва, ул. Ленина, д. 10\n"
             f"{Emoji.SEARCH} Метро: Парк Культуры, выход №3\n"
-            f"{Emoji.CAR} Парковка: бесплатно для пациентов"
+            f"{Emoji.CAR} Парковка: бесплатно"
         ),
         'Стоимость услуг': (
             f"{Emoji.MONEY} **Стоимость услуг**\n\n"
             f"• Консультация: 500 ₽\n"
             f"• Лечение кариеса: от 3 000 ₽\n"
             f"• Удаление зуба: от 2 000 ₽\n"
-            f"• Чистка зубов: 2 500 ₽\n"
-            f"• Имплантация: от 25 000 ₽\n\n"
-            f"Точная стоимость после осмотра"
+            f"• Чистка зубов: 2 500 ₽"
         ),
         'Акции': (
             f"{Emoji.SPARKLES} **Акции**\n\n"
-            f"🎁 Скидка 10% на первое посещение\n"
-            f"🎁 Семейная скидка 15%\n"
-            f"🎁 Чистка + осмотр: 2 500 ₽"
+            f"• Скидка 10% на первое посещение\n"
+            f"• Семейная скидка 15%\n"
+            f"• Чистка + осмотр: 2 500 ₽"
         ),
         'Больно ли лечить': (
             f"{Emoji.HEART} **Болезненные ощущения**\n\n"
-            f"✅ Современные анестетики\n"
-            f"✅ Безболезненное лечение\n"
-            f"✅ Седация (лечение во сне)\n"
-            f"✅ Индивидуальный подход"
+            f"• Современные анестетики\n"
+            f"• Безболезненное лечение\n"
+            f"• Седация (лечение во сне)"
         ),
         'Детский прием': (
             f"{Emoji.DOCTOR_WOMAN} **Детский прием**\n\n"
-            f"👶 Возраст: с 3 лет\n"
-            f"🎈 Первый осмотр: бесплатно\n"
-            f"🧸 Адаптация в игровой форме\n"
-            f"🛏 Лечение во сне при необходимости"
-        ),
-        'Оплата': (
-            f"{Emoji.MONEY} **Оплата**\n\n"
-            f"💳 Наличные\n"
-            f"💳 Банковские карты\n"
-            f"💳 Перевод на карту\n"
-            f"💳 ДМС"
+            f"• Возраст: с 3 лет\n"
+            f"• Первый осмотр: бесплатно\n"
+            f"• Адаптация в игровой форме"
         ),
         'Отмена записи': (
             f"{Emoji.CANCEL} **Отмена записи**\n\n"
             f"Отменить запись можно:\n"
-            f"1️⃣ В боте (Мои записи → Отменить)\n"
-            f"2️⃣ По телефону: +7 (999) 123-45-67"
+            f"1. В боте (Мои записи → Отменить)\n"
+            f"2. По телефону: +7 (999) 123-45-67"
         )
     }
     
-    # Время напоминания (за часов до приема)
-    REMINDER_HOURS = 2
-    
-    # Максимальное количество дней для записи
     MAX_DAYS_AHEAD = 14
-    
-    # Длительность приема в минутах
-    APPOINTMENT_DURATION = 30
 
 
 # ============================================================================
@@ -278,14 +252,11 @@ class Config:
 # ============================================================================
 
 class GoogleSheetsManager:
-    """Управление Google Sheets - ПОЛНАЯ РЕАЛИЗАЦИЯ"""
+    """Управление Google Sheets"""
     
     def __init__(self):
         self.client = None
-        self.spreadsheet = None
-        self.appointments_sheet = None
-        self.patients_sheet = None
-        self.settings_sheet = None
+        self.sheet = None
         self.authenticate()
     
     def authenticate(self):
@@ -297,83 +268,40 @@ class GoogleSheetsManager:
             if os.path.exists('credentials.json'):
                 scope = [
                     'https://spreadsheets.google.com/feeds',
-                    'https://www.googleapis.com/auth/drive',
-                    'https://www.googleapis.com/auth/spreadsheets'
+                    'https://www.googleapis.com/auth/drive'
                 ]
                 creds = Credentials.from_service_account_file('credentials.json', scopes=scope)
                 self.client = gspread.authorize(creds)
-                self.setup_sheets()
-                print(f"{Emoji.CHECK} Google Sheets подключен")
-            else:
-                print(f"{Emoji.WARNING} credentials.json не найден")
+                
+                if Config.GOOGLE_SHEETS_ID:
+                    self.sheet = self.client.open_by_key(Config.GOOGLE_SHEETS_ID).sheet1
+                    self.setup_headers()
+                    print(f"{Emoji.CHECK} Google Sheets подключен")
+                else:
+                    print(f"{Emoji.WARNING} GOOGLE_SHEETS_ID не указан")
         except Exception as e:
             print(f"{Emoji.ERROR} Ошибка аутентификации: {e}")
     
-    def setup_sheets(self):
-        """Настройка таблиц и листов"""
+    def setup_headers(self):
+        """Настройка заголовков таблицы"""
         try:
-            # Открываем или создаем таблицу
-            if Config.GOOGLE_SHEETS_ID:
-                self.spreadsheet = self.client.open_by_key(Config.GOOGLE_SHEETS_ID)
-            else:
-                self.spreadsheet = self.client.create('Стоматологическая клиника - Записи')
-            
-            # Лист записей
-            try:
-                self.appointments_sheet = self.spreadsheet.worksheet('Записи')
-            except:
-                self.appointments_sheet = self.spreadsheet.add_worksheet('Записи', 1000, 20)
+            if self.sheet and not self.sheet.get_all_values():
                 headers = [
-                    'ID', 'Дата', 'Время', 'Врач', 'Пациент', 'Телефон',
+                    'Дата', 'Время', 'Врач', 'Пациент', 'Телефон',
                     'Telegram ID', 'Username', 'Статус', 'Создано', 'Напоминание'
                 ]
-                self.appointments_sheet.append_row(headers)
-            
-            # Лист пациентов
-            try:
-                self.patients_sheet = self.spreadsheet.worksheet('Пациенты')
-            except:
-                self.patients_sheet = self.spreadsheet.add_worksheet('Пациенты', 1000, 15)
-                headers = [
-                    'Telegram ID', 'Имя', 'Телефон', 'Username',
-                    'Дата регистрации', 'Всего записей', 'Последний визит', 'Заметки'
-                ]
-                self.patients_sheet.append_row(headers)
-            
-            # Лист настроек
-            try:
-                self.settings_sheet = self.spreadsheet.worksheet('Настройки')
-            except:
-                self.settings_sheet = self.spreadsheet.add_worksheet('Настройки', 100, 5)
-                headers = ['Параметр', 'Значение', 'Описание']
-                self.settings_sheet.append_row(headers)
-                self.settings_sheet.append_row(['last_appointment_id', '0', 'Последний ID записи'])
-            
-            print(f"{Emoji.CHECK} Таблицы настроены")
-            
+                self.sheet.append_row(headers)
         except Exception as e:
-            print(f"{Emoji.ERROR} Ошибка настройки таблиц: {e}")
-    
-    def generate_appointment_id(self) -> str:
-        """Генерация уникального ID записи"""
-        timestamp = datetime.now().strftime('%y%m%d%H%M%S')
-        random_suffix = hashlib.md5(str(time.time()).encode()).hexdigest()[:4]
-        return f"AP{timestamp}{random_suffix}"
+            print(f"{Emoji.ERROR} Ошибка настройки заголовков: {e}")
     
     def add_appointment(self, date: str, time: str, doctor: str, patient_name: str,
                        phone: str, telegram_id: int, username: str = '') -> bool:
         """Добавление новой записи"""
         try:
-            if not self.appointments_sheet:
+            if not self.sheet:
                 return False
             
-            # Генерируем ID записи
-            appointment_id = self.generate_appointment_id()
-            created_at = datetime.now().strftime('%d.%m.%Y %H:%M:%S')
-            
-            # Добавляем строку
             row = [
-                appointment_id,
                 date,
                 time,
                 doctor,
@@ -382,224 +310,117 @@ class GoogleSheetsManager:
                 str(telegram_id),
                 username or '-',
                 'Подтверждена',
-                created_at,
+                datetime.now().strftime('%d.%m.%Y %H:%M:%S'),
                 'Нет'
             ]
-            self.appointments_sheet.append_row(row)
-            
-            # Обновляем данные пациента
-            self.update_patient(telegram_id, patient_name, phone, username, date)
-            
-            print(f"{Emoji.SUCCESS} Запись {appointment_id} создана для {patient_name}")
+            self.sheet.append_row(row)
+            print(f"{Emoji.SUCCESS} Запись создана: {date} {time} - {patient_name}")
             return True
-            
         except Exception as e:
             print(f"{Emoji.ERROR} Ошибка добавления записи: {e}")
             return False
     
-    def update_patient(self, telegram_id: int, name: str, phone: str,
-                      username: str, visit_date: str):
-        """Обновление или создание карточки пациента"""
-        try:
-            if not self.patients_sheet:
-                return
-            
-            all_records = self.patients_sheet.get_all_records()
-            found = False
-            row_num = 2
-            
-            # Ищем существующего пациента
-            for i, patient in enumerate(all_records, start=2):
-                if str(patient.get('Telegram ID', '')) == str(telegram_id):
-                    found = True
-                    row_num = i
-                    break
-            
-            now = datetime.now().strftime('%d.%m.%Y %H:%M:%S')
-            
-            if found:
-                # Обновляем существующего
-                total = int(self.patients_sheet.cell(row_num, 6).value or '0') + 1
-                self.patients_sheet.update_cell(row_num, 2, name)
-                self.patients_sheet.update_cell(row_num, 3, phone)
-                self.patients_sheet.update_cell(row_num, 4, username or '-')
-                self.patients_sheet.update_cell(row_num, 6, str(total))
-                self.patients_sheet.update_cell(row_num, 7, visit_date)
-            else:
-                # Добавляем нового
-                row = [
-                    str(telegram_id),
-                    name,
-                    phone,
-                    username or '-',
-                    now,
-                    '1',
-                    visit_date,
-                    ''
-                ]
-                self.patients_sheet.append_row(row)
-                
-        except Exception as e:
-            print(f"{Emoji.ERROR} Ошибка обновления пациента: {e}")
-    
     def get_available_slots(self, date: str) -> List[str]:
         """Получение свободных временных слотов"""
         try:
-            if not self.appointments_sheet:
+            if not self.sheet:
                 return Config.WORK_HOURS
             
-            all_records = self.appointments_sheet.get_all_records()
+            records = self.sheet.get_all_records()
             busy_times = []
             
-            for record in all_records:
-                if (record.get('Дата') == date and
+            for record in records:
+                if (record.get('Дата') == date and 
                     record.get('Статус') == 'Подтверждена'):
                     busy_times.append(record.get('Время'))
             
             available = [t for t in Config.WORK_HOURS if t not in busy_times]
             return available
-            
         except Exception as e:
             print(f"{Emoji.ERROR} Ошибка получения слотов: {e}")
             return Config.WORK_HOURS
     
     def get_user_appointments(self, telegram_id: int) -> List[Dict]:
-        """Получение всех записей пользователя"""
+        """Получение записей пользователя"""
         try:
-            if not self.appointments_sheet:
+            if not self.sheet:
                 return []
             
-            all_records = self.appointments_sheet.get_all_records()
+            records = self.sheet.get_all_records()
             user_appointments = []
             
-            for record in all_records:
+            for record in records:
                 if str(record.get('Telegram ID', '')) == str(telegram_id):
                     user_appointments.append(record)
             
-            # Сортировка по дате (сначала ближайшие)
-            user_appointments.sort(
-                key=lambda x: f"{x.get('Дата', '')} {x.get('Время', '')}"
-            )
-            
             return user_appointments
-            
         except Exception as e:
             print(f"{Emoji.ERROR} Ошибка получения записей: {e}")
-            return []
-    
-    def get_today_appointments(self) -> List[Dict]:
-        """Получение записей на сегодня"""
-        try:
-            if not self.appointments_sheet:
-                return []
-            
-            today = datetime.now().strftime('%d.%m.%Y')
-            all_records = self.appointments_sheet.get_all_records()
-            today_appointments = []
-            
-            for record in all_records:
-                if (record.get('Дата') == today and
-                    record.get('Статус') == 'Подтверждена'):
-                    today_appointments.append(record)
-            
-            return today_appointments
-            
-        except Exception as e:
-            print(f"{Emoji.ERROR} Ошибка получения записей на сегодня: {e}")
-            return []
-    
-    def get_upcoming_appointments(self) -> List[Dict]:
-        """Получение предстоящих записей"""
-        try:
-            if not self.appointments_sheet:
-                return []
-            
-            today = datetime.now().strftime('%d.%m.%Y')
-            all_records = self.appointments_sheet.get_all_records()
-            upcoming = []
-            
-            for record in all_records:
-                if (record.get('Статус') == 'Подтверждена' and
-                    record.get('Дата', '') >= today):
-                    upcoming.append(record)
-            
-            return upcoming
-            
-        except Exception as e:
-            print(f"{Emoji.ERROR} Ошибка получения предстоящих записей: {e}")
             return []
     
     def cancel_appointment(self, date: str, time: str, telegram_id: int) -> bool:
         """Отмена записи"""
         try:
-            if not self.appointments_sheet:
+            if not self.sheet:
                 return False
             
-            all_records = self.appointments_sheet.get_all_records()
+            records = self.sheet.get_all_records()
             
-            for i, record in enumerate(all_records, start=2):
+            for i, record in enumerate(records, start=2):
                 if (str(record.get('Telegram ID', '')) == str(telegram_id) and
                     record.get('Дата') == date and
-                    record.get('Время') == time and
-                    record.get('Статус') == 'Подтверждена'):
+                    record.get('Время') == time):
                     
-                    self.appointments_sheet.update_cell(i, 9, 'Отменена')
+                    self.sheet.update_cell(i, 8, 'Отменена')
                     print(f"{Emoji.CHECK} Запись отменена: {date} {time}")
                     return True
             
             return False
-            
         except Exception as e:
             print(f"{Emoji.ERROR} Ошибка отмены записи: {e}")
             return False
     
+    def get_today_appointments(self) -> List[Dict]:
+        """Получение записей на сегодня"""
+        try:
+            if not self.sheet:
+                return []
+            
+            today = datetime.now().strftime('%d.%m.%Y')
+            records = self.sheet.get_all_records()
+            today_appointments = []
+            
+            for record in records:
+                if (record.get('Дата') == today and 
+                    record.get('Статус') == 'Подтверждена'):
+                    today_appointments.append(record)
+            
+            return today_appointments
+        except Exception as e:
+            print(f"{Emoji.ERROR} Ошибка получения записей на сегодня: {e}")
+            return []
+    
     def mark_reminder_sent(self, date: str, time: str, telegram_id: int) -> bool:
         """Отметить отправку напоминания"""
         try:
-            if not self.appointments_sheet:
+            if not self.sheet:
                 return False
             
-            all_records = self.appointments_sheet.get_all_records()
+            records = self.sheet.get_all_records()
             
-            for i, record in enumerate(all_records, start=2):
+            for i, record in enumerate(records, start=2):
                 if (str(record.get('Telegram ID', '')) == str(telegram_id) and
                     record.get('Дата') == date and
                     record.get('Время') == time):
                     
                     sent_time = datetime.now().strftime('%d.%m.%Y %H:%M')
-                    self.appointments_sheet.update_cell(i, 11, f'Отправлено {sent_time}')
+                    self.sheet.update_cell(i, 10, f'Отправлено {sent_time}')
                     return True
             
             return False
-            
         except Exception as e:
             print(f"{Emoji.ERROR} Ошибка отметки напоминания: {e}")
             return False
-    
-    def get_appointment_stats(self) -> Dict:
-        """Получение статистики записей"""
-        try:
-            if not self.appointments_sheet:
-                return {}
-            
-            all_records = self.appointments_sheet.get_all_records()
-            today = datetime.now().strftime('%d.%m.%Y')
-            
-            total = len(all_records)
-            confirmed = len([r for r in all_records if r.get('Статус') == 'Подтверждена'])
-            cancelled = len([r for r in all_records if r.get('Статус') == 'Отменена'])
-            today_count = len([r for r in all_records if r.get('Дата') == today])
-            
-            return {
-                'total': total,
-                'confirmed': confirmed,
-                'cancelled': cancelled,
-                'today': today_count
-            }
-            
-        except Exception as e:
-            print(f"{Emoji.ERROR} Ошибка получения статистики: {e}")
-            return {}
 
 
 # ============================================================================
@@ -623,7 +444,6 @@ class ReminderScheduler:
             
             self.scheduler = AsyncIOScheduler()
             
-            # Проверяем каждый час с 8:00 до 21:00
             for hour in range(8, 21):
                 self.scheduler.add_job(
                     self.send_reminders,
@@ -631,27 +451,17 @@ class ReminderScheduler:
                     id=f'reminder_{hour}'
                 )
             
-            # Проверяем каждые 30 минут в пиковые часы
-            self.scheduler.add_job(
-                self.send_reminders,
-                CronTrigger(hour='9-12,17-20', minute='0,30'),
-                id='reminder_peak'
-            )
-            
             self.scheduler.start()
             print(f"{Emoji.CHECK} Планировщик напоминаний запущен")
-            
         except Exception as e:
             print(f"{Emoji.ERROR} Ошибка настройки планировщика: {e}")
     
     async def send_reminders(self):
         """Отправка напоминаний"""
         try:
-            today = datetime.now().strftime('%d.%m.%Y')
             appointments = self.google_sheets.get_today_appointments()
             
             for appointment in appointments:
-                # Проверяем, отправляли ли уже напоминание
                 if 'Отправлено' in str(appointment.get('Напоминание', '')):
                     continue
                 
@@ -661,7 +471,6 @@ class ReminderScheduler:
                 doctor = appointment.get('Врач', '')
                 
                 try:
-                    # Рассчитываем время до приема
                     appointment_time = datetime.strptime(time_str, '%H:%M')
                     now = datetime.now()
                     appointment_datetime = now.replace(
@@ -672,7 +481,6 @@ class ReminderScheduler:
                     
                     time_diff = (appointment_datetime - now).total_seconds() / 3600
                     
-                    # Отправляем за 2 часа до приема
                     if 1.5 <= time_diff <= 2.5:
                         message = (
                             f"{Emoji.BELL} **Напоминание о приеме!**\n\n"
@@ -680,8 +488,7 @@ class ReminderScheduler:
                             f"{Emoji.CLOCK} **Время:** {time_str}\n"
                             f"{Emoji.DOCTOR} **Врач:** {doctor}\n"
                             f"{Emoji.LOCATION} **Адрес:** г. Москва, ул. Ленина, д. 10\n\n"
-                            f"{Emoji.INFO} Пожалуйста, не опаздывайте.\n"
-                            f"Если нужно отменить запись - используйте раздел «Мои записи»"
+                            f"{Emoji.INFO} Ждем вас!"
                         )
                         
                         await self.bot.send_message(
@@ -690,18 +497,13 @@ class ReminderScheduler:
                             parse_mode=ParseMode.MARKDOWN
                         )
                         
-                        # Отмечаем отправку
                         self.google_sheets.mark_reminder_sent(
                             appointment.get('Дата'),
                             appointment.get('Время'),
                             telegram_id
                         )
-                        
-                        print(f"{Emoji.BELL} Напоминание отправлено {telegram_id}")
-                        
                 except Exception as e:
-                    print(f"{Emoji.ERROR} Ошибка отправки напоминания: {e}")
-                    
+                    print(f"{Emoji.ERROR} Ошибка отправки: {e}")
         except Exception as e:
             print(f"{Emoji.ERROR} Ошибка в планировщике: {e}")
 
@@ -717,29 +519,15 @@ class Keyboards:
     def main_menu(is_admin: bool = False) -> InlineKeyboardMarkup:
         """Главное меню"""
         keyboard = [
-            [InlineKeyboardButton(f"{Emoji.CALENDAR} Записаться на прием", callback_data='appointment')],
-            [InlineKeyboardButton(f"{Emoji.DOCTOR} Наши врачи", callback_data='doctors')],
-            [InlineKeyboardButton(f"{Emoji.QUESTION} Частые вопросы", callback_data='faq')],
+            [InlineKeyboardButton(f"{Emoji.CALENDAR} Записаться", callback_data='appointment')],
+            [InlineKeyboardButton(f"{Emoji.DOCTOR} Врачи", callback_data='doctors')],
+            [InlineKeyboardButton(f"{Emoji.QUESTION} Вопросы", callback_data='faq')],
             [InlineKeyboardButton(f"{Emoji.CHECK} Мои записи", callback_data='my_appointments')],
             [InlineKeyboardButton(f"{Emoji.HOSPITAL} О клинике", callback_data='about')],
             [InlineKeyboardButton(f"{Emoji.PHONE} Контакты", callback_data='contacts')]
         ]
-        
         if is_admin:
-            keyboard.append([InlineKeyboardButton(f"{Emoji.CROWN} Админ-панель", callback_data='admin_panel')])
-        
-        return InlineKeyboardMarkup(keyboard)
-    
-    @staticmethod
-    def admin_panel() -> InlineKeyboardMarkup:
-        """Панель администратора"""
-        keyboard = [
-            [InlineKeyboardButton(f"{Emoji.CALENDAR} Записи на сегодня", callback_data='admin_today')],
-            [InlineKeyboardButton(f"{Emoji.STATS} Статистика", callback_data='admin_stats')],
-            [InlineKeyboardButton(f"{Emoji.USER} Список пациентов", callback_data='admin_patients')],
-            [InlineKeyboardButton(f"{Emoji.BELL} Рассылка", callback_data='admin_broadcast')],
-            [InlineKeyboardButton(f"{Emoji.BACK} Назад", callback_data='back_to_menu')]
-        ]
+            keyboard.append([InlineKeyboardButton(f"{Emoji.CROWN} Админ", callback_data='admin')])
         return InlineKeyboardMarkup(keyboard)
     
     @staticmethod
@@ -748,11 +536,9 @@ class Keyboards:
         keyboard = []
         for doc_id, doctor in Config.DOCTORS.items():
             icon = Emoji.DOCTOR_WOMAN if 'ва' in doctor.name else Emoji.DOCTOR
-            name_parts = doctor.name.split()
-            short_name = f"{name_parts[0]} {name_parts[1][0]}." if len(name_parts) > 1 else doctor.name
             keyboard.append([
                 InlineKeyboardButton(
-                    f"{icon} {short_name} - {doctor.specialty[:20]}",
+                    f"{icon} {doctor.name.split()[1]}",
                     callback_data=f"doctor_{doc_id}"
                 )
             ])
@@ -765,19 +551,16 @@ class Keyboards:
         keyboard = []
         today = datetime.now()
         
-        days_ru = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'ВС']
-        
         for i in range(Config.MAX_DAYS_AHEAD):
             date = today + timedelta(days=i)
             date_str = date.strftime('%d.%m.%Y')
             
             if i == 0:
-                label = f"{Emoji.CALENDAR} Сегодня ({date.day}.{date.month})"
+                label = f"{Emoji.CALENDAR} Сегодня"
             elif i == 1:
-                label = f"{Emoji.CALENDAR} Завтра ({date.day}.{date.month})"
+                label = f"{Emoji.CALENDAR} Завтра"
             else:
-                day_name = days_ru[date.weekday()]
-                label = f"{Emoji.CALENDAR} {date.day}.{date.month} ({day_name})"
+                label = f"{Emoji.CALENDAR} {date.day}.{date.month}"
             
             keyboard.append([InlineKeyboardButton(label, callback_data=f"date_{date_str}")])
         
@@ -785,14 +568,14 @@ class Keyboards:
         return InlineKeyboardMarkup(keyboard)
     
     @staticmethod
-    def time_keyboard(date: str, available_times: List[str]) -> InlineKeyboardMarkup:
+    def time_keyboard(date: str, times: List[str]) -> InlineKeyboardMarkup:
         """Выбор времени"""
         keyboard = []
         row = []
         
-        for i, time in enumerate(available_times, 1):
+        for i, time in enumerate(times[:8], 1):
             row.append(InlineKeyboardButton(time, callback_data=f"time_{date}_{time}"))
-            if len(row) == 3:
+            if len(row) == 2:
                 keyboard.append(row)
                 row = []
         
@@ -807,8 +590,10 @@ class Keyboards:
         """Подтверждение записи"""
         keyboard = [
             [
-                InlineKeyboardButton(f"{Emoji.CHECK} Подтвердить", callback_data=f"confirm_{date}_{time}_{doctor_id}"),
-                InlineKeyboardButton(f"{Emoji.CANCEL} Отмена", callback_data='cancel_appointment')
+                InlineKeyboardButton(f"{Emoji.CHECK} Подтвердить", 
+                                    callback_data=f"confirm_{date}_{time}_{doctor_id}"),
+                InlineKeyboardButton(f"{Emoji.CANCEL} Отмена", 
+                                    callback_data='cancel_appointment')
             ]
         ]
         return InlineKeyboardMarkup(keyboard)
@@ -818,7 +603,10 @@ class Keyboards:
         """Клавиатура FAQ"""
         keyboard = []
         for question in Config.FAQ.keys():
-            keyboard.append([InlineKeyboardButton(f"{Emoji.QUESTION} {question}", callback_data=f"faq_{question}")])
+            keyboard.append([
+                InlineKeyboardButton(f"{Emoji.QUESTION} {question}", 
+                                    callback_data=f"faq_{question}")
+            ])
         keyboard.append([InlineKeyboardButton(f"{Emoji.BACK} Назад", callback_data='back_to_menu')])
         return InlineKeyboardMarkup(keyboard)
     
@@ -826,23 +614,33 @@ class Keyboards:
     def my_appointments_keyboard(appointments: List[Dict]) -> InlineKeyboardMarkup:
         """Список записей пользователя"""
         keyboard = []
-        for app in appointments[:5]:
-            if app.get('Статус') == 'Подтверждена':
-                keyboard.append([
-                    InlineKeyboardButton(
-                        f"{Emoji.CALENDAR} {app['Дата']} {app['Время']}",
-                        callback_data=f"view_{app['Дата']}_{app['Время']}"
-                    )
-                ])
+        for app in appointments[:3]:
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"{Emoji.CALENDAR} {app['Дата']} {app['Время']}",
+                    callback_data=f"view_{app['Дата']}_{app['Время']}"
+                )
+            ])
         keyboard.append([InlineKeyboardButton(f"{Emoji.BACK} Назад", callback_data='back_to_menu')])
         return InlineKeyboardMarkup(keyboard)
     
     @staticmethod
-    def appointment_actions_keyboard(date: str, time: str) -> InlineKeyboardMarkup:
-        """Действия с записью"""
+    def cancel_appointment_keyboard(date: str, time: str) -> InlineKeyboardMarkup:
+        """Отмена записи"""
         keyboard = [
-            [InlineKeyboardButton(f"{Emoji.CANCEL} Отменить запись", callback_data=f"cancel_{date}_{time}")],
-            [InlineKeyboardButton(f"{Emoji.BACK} К списку записей", callback_data='my_appointments')]
+            [InlineKeyboardButton(f"{Emoji.CANCEL} Отменить запись", 
+                                 callback_data=f"cancel_{date}_{time}")],
+            [InlineKeyboardButton(f"{Emoji.BACK} Назад", callback_data='my_appointments')]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+    
+    @staticmethod
+    def admin_keyboard() -> InlineKeyboardMarkup:
+        """Админ-панель"""
+        keyboard = [
+            [InlineKeyboardButton(f"{Emoji.CALENDAR} Записи на сегодня", callback_data='admin_today')],
+            [InlineKeyboardButton(f"{Emoji.STATS} Статистика", callback_data='admin_stats')],
+            [InlineKeyboardButton(f"{Emoji.BACK} Назад", callback_data='back_to_menu')]
         ]
         return InlineKeyboardMarkup(keyboard)
 
@@ -858,9 +656,8 @@ class Keyboards:
     CONFIRMING,
     GETTING_NAME,
     GETTING_PHONE,
-    VIEWING_APPOINTMENT,
-    ADMIN_BROADCAST
-) = range(8)
+    VIEWING_APPOINTMENT
+) = range(7)
 
 
 # ============================================================================
@@ -868,7 +665,7 @@ class Keyboards:
 # ============================================================================
 
 class DentalClinicBot:
-    """Бот стоматологической клиники - ПОЛНАЯ РЕАЛИЗАЦИЯ"""
+    """Бот стоматологической клиники"""
     
     def __init__(self):
         self.config = Config()
@@ -876,71 +673,45 @@ class DentalClinicBot:
         self.google_sheets = GoogleSheetsManager()
         self.reminder_scheduler = None
         self.application = None
-        
-        # Хранилище данных пользователей
         self.user_data = defaultdict(AppointmentData)
         
-        # Настройка логирования
         logging.basicConfig(
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
             level=logging.INFO
         )
         self.logger = logging.getLogger(__name__)
     
-    # ========================================================================
-    # КОМАНДЫ
-    # ========================================================================
-    
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик команды /start"""
+        """Команда /start"""
         user = update.effective_user
-        user_id = user.id
+        is_admin = user.id in self.config.ADMIN_IDS
         
-        # Проверка на админа
-        is_admin = user_id in self.config.ADMIN_IDS
-        
-        welcome_text = (
+        text = (
             f"{Emoji.TOOTH} **Здравствуйте, {user.first_name}!**\n\n"
-            f"Добро пожаловать в бот стоматологической клиники.\n\n"
-            f"**С помощью бота вы можете:**\n"
-            f"{Emoji.CHECK} Записаться к врачу за 1 минуту\n"
-            f"{Emoji.CHECK} Выбрать удобное время\n"
-            f"{Emoji.CHECK} Получить напоминание о приеме\n"
-            f"{Emoji.CHECK} Просмотреть свои записи\n"
-            f"{Emoji.CHECK} Отменить запись\n\n"
-            f"{Emoji.CLOCK} **Режим работы:** 9:00 - 20:00 ежедневно\n"
-            f"{Emoji.LOCATION} **Адрес:** г. Москва, ул. Ленина, д. 10\n\n"
-            f"Выберите действие в меню:"
+            f"Я помогу вам записаться к врачу.\n\n"
+            f"{Emoji.CLOCK} Работаем: 9:00-20:00 ежедневно\n"
+            f"{Emoji.LOCATION} Москва, ул. Ленина, д. 10"
         )
         
         await update.message.reply_text(
-            welcome_text,
+            text,
             reply_markup=self.keyboards.main_menu(is_admin),
             parse_mode=ParseMode.MARKDOWN
         )
-        
         return ConversationHandler.END
     
     async def cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Отмена текущего действия"""
+        """Отмена действия"""
         user_id = update.effective_user.id
-        
         if user_id in self.user_data:
             del self.user_data[user_id]
         
         is_admin = user_id in self.config.ADMIN_IDS
-        
         await update.message.reply_text(
             f"{Emoji.CANCEL} Действие отменено",
-            reply_markup=self.keyboards.main_menu(is_admin),
-            parse_mode=ParseMode.MARKDOWN
+            reply_markup=self.keyboards.main_menu(is_admin)
         )
-        
         return ConversationHandler.END
-    
-    # ========================================================================
-    # ОБРАБОТЧИКИ КНОПОК
-    # ========================================================================
     
     async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик нажатий на кнопки"""
@@ -951,46 +722,28 @@ class DentalClinicBot:
         user_id = update.effective_user.id
         is_admin = user_id in self.config.ADMIN_IDS
         
-        # ========== ГЛАВНОЕ МЕНЮ ==========
+        # Главное меню
         if data == 'back_to_menu':
             await query.edit_message_text(
-                f"{Emoji.MENU} **Главное меню**",
-                reply_markup=self.keyboards.main_menu(is_admin),
-                parse_mode=ParseMode.MARKDOWN
+                "Главное меню:",
+                reply_markup=self.keyboards.main_menu(is_admin)
             )
             return ConversationHandler.END
         
-        # ========== ЗАПИСЬ НА ПРИЕМ ==========
+        # Запись на прием
         elif data == 'appointment':
             self.user_data[user_id] = AppointmentData()
-            
             await query.edit_message_text(
-                f"{Emoji.DOCTOR} **Выберите врача**\n\n"
-                f"У каждого специалиста своя специализация:\n"
-                f"{Emoji.BULLET} Терапевт - лечение зубов\n"
-                f"{Emoji.BULLET} Хирург - удаление, импланты\n"
-                f"{Emoji.BULLET} Ортодонт - исправление прикуса\n"
-                f"{Emoji.BULLET} Ортопед - протезирование\n"
-                f"{Emoji.BULLET} Детский врач - лечение детей",
-                reply_markup=self.keyboards.doctors_keyboard(),
-                parse_mode=ParseMode.MARKDOWN
+                f"{Emoji.DOCTOR} Выберите врача:",
+                reply_markup=self.keyboards.doctors_keyboard()
             )
             return SELECTING_DOCTOR
         
-        # ========== ИНФОРМАЦИЯ О ВРАЧАХ ==========
+        # Информация о врачах
         elif data == 'doctors':
             text = f"{Emoji.DOCTOR} **Наши врачи**\n\n"
-            
             for doctor in self.config.DOCTORS.values():
-                icon = Emoji.DOCTOR_WOMAN if 'ва' in doctor.name else Emoji.DOCTOR
-                stars = "⭐" * int(doctor.rating)
-                text += (
-                    f"{icon} **{doctor.name}**\n"
-                    f"{Emoji.BULLET} {doctor.specialty}\n"
-                    f"{Emoji.BULLET} Стаж: {doctor.experience} лет {stars}\n"
-                    f"{Emoji.BULLET} {doctor.description}\n\n"
-                )
-            
+                text += doctor.full_info() + "\n\n"
             await query.edit_message_text(
                 text,
                 reply_markup=self.keyboards.doctors_keyboard(),
@@ -998,105 +751,70 @@ class DentalClinicBot:
             )
             return SELECTING_DOCTOR
         
-        # ========== ВЫБОР ВРАЧА ==========
+        # Выбор врача
         elif data.startswith('doctor_'):
             doctor_id = data.split('_')[1]
             doctor = self.config.DOCTORS[doctor_id]
             
-            # Сохраняем данные
             self.user_data[user_id].doctor_id = doctor_id
             self.user_data[user_id].doctor_name = f"{doctor.name} ({doctor.specialty})"
             
-            stars = "⭐" * int(doctor.rating)
-            icon = Emoji.DOCTOR_WOMAN if 'ва' in doctor.name else Emoji.DOCTOR
-            
-            text = (
-                f"{icon} **{doctor.name}**\n"
-                f"**{doctor.specialty}**\n\n"
-                f"{Emoji.BULLET} Стаж: {doctor.experience} лет\n"
-                f"{Emoji.BULLET} Рейтинг: {doctor.rating} {stars}\n"
-                f"{Emoji.BULLET} {doctor.description}\n"
-                f"{Emoji.BULLET} {doctor.education}\n\n"
-                f"{Emoji.CALENDAR} **Выберите дату приема:**"
-            )
-            
             await query.edit_message_text(
-                text,
+                f"{doctor.full_info()}\n\n{Emoji.CALENDAR} Выберите дату:",
                 reply_markup=self.keyboards.date_keyboard(),
                 parse_mode=ParseMode.MARKDOWN
             )
             return SELECTING_DATE
         
-        # ========== ВЫБОР ДАТЫ ==========
+        # Выбор даты
         elif data.startswith('date_'):
             date = data.split('_')[1]
-            
-            # Сохраняем дату
             self.user_data[user_id].date = date
             
-            # Получаем свободное время
             available_times = self.google_sheets.get_available_slots(date)
             
             if not available_times:
                 await query.edit_message_text(
-                    f"{Emoji.CANCEL} **Нет свободного времени**\n\n"
-                    f"На выбранную дату все слоты заняты.\n"
-                    f"Пожалуйста, выберите другую дату:",
-                    reply_markup=self.keyboards.date_keyboard(),
-                    parse_mode=ParseMode.MARKDOWN
+                    f"{Emoji.CANCEL} Нет свободного времени. Выберите другую дату:",
+                    reply_markup=self.keyboards.date_keyboard()
                 )
                 return SELECTING_DATE
             
-            # Форматируем дату
-            date_obj = datetime.strptime(date, '%d.%m.%Y')
-            date_display = date_obj.strftime('%d.%m.%Y')
-            
             await query.edit_message_text(
-                f"{Emoji.CALENDAR} **Дата:** {date_display}\n"
-                f"{Emoji.CLOCK} **Доступное время:**\n\n"
-                f"Выберите удобное время:",
-                reply_markup=self.keyboards.time_keyboard(date, available_times),
-                parse_mode=ParseMode.MARKDOWN
+                f"{Emoji.CALENDAR} Дата: {date}\n{Emoji.CLOCK} Выберите время:",
+                reply_markup=self.keyboards.time_keyboard(date, available_times)
             )
             return SELECTING_TIME
         
-        # ========== ВЫБОР ВРЕМЕНИ ==========
+        # Выбор времени
         elif data.startswith('time_'):
             parts = data.split('_')
             date = parts[1]
             time = parts[2]
             
-            # Сохраняем время
             self.user_data[user_id].date = date
             self.user_data[user_id].time = time
             
-            # Форматируем дату
-            date_obj = datetime.strptime(date, '%d.%m.%Y')
-            date_display = date_obj.strftime('%d.%m.%Y')
-            
             await query.edit_message_text(
-                f"{Emoji.CHECK} **Проверьте данные записи**\n\n"
-                f"{Emoji.CALENDAR} **Дата:** {date_display}\n"
-                f"{Emoji.CLOCK} **Время:** {time}\n"
-                f"{Emoji.DOCTOR} **Врач:** {self.user_data[user_id].doctor_name}\n\n"
+                f"{Emoji.CHECK} **Проверьте данные:**\n\n"
+                f"{Emoji.CALENDAR} Дата: {date}\n"
+                f"{Emoji.CLOCK} Время: {time}\n"
+                f"{Emoji.DOCTOR} Врач: {self.user_data[user_id].doctor_name}\n\n"
                 f"Всё верно?",
                 reply_markup=self.keyboards.confirm_keyboard(
-                    date,
-                    time,
-                    self.user_data[user_id].doctor_id
+                    date, time, self.user_data[user_id].doctor_id
                 ),
                 parse_mode=ParseMode.MARKDOWN
             )
             return CONFIRMING
         
-        # ========== ПОДТВЕРЖДЕНИЕ ЗАПИСИ ==========
+        # Подтверждение записи - ВАЖНО!
         elif data.startswith('confirm_'):
             parts = data.split('_')
             date = parts[1]
             time = parts[2]
             doctor_id = parts[3]
             
-            # Сохраняем все данные
             self.user_data[user_id].date = date
             self.user_data[user_id].time = time
             self.user_data[user_id].doctor_id = doctor_id
@@ -1105,31 +823,25 @@ class DentalClinicBot:
                 doctor = self.config.DOCTORS[doctor_id]
                 self.user_data[user_id].doctor_name = f"{doctor.name} ({doctor.specialty})"
             
-            # Удаляем сообщение с подтверждением
             await query.message.delete()
             
-            # Отправляем запрос ФИО
             await context.bot.send_message(
                 chat_id=user_id,
                 text=(
-                    f"{Emoji.EDIT} **Введите ваше полное ФИО**\n\n"
-                    f"Формат: Иванов Иван Иванович\n\n"
-                    f"{Emoji.INFO} Это необходимо для оформления медицинской карты"
+                    f"{Emoji.EDIT} **Введите ваше ФИО**\n\n"
+                    f"Пример: Иванов Иван Иванович"
                 ),
                 parse_mode=ParseMode.MARKDOWN
             )
-            
             return GETTING_NAME
         
-        # ========== ОТМЕНА ЗАПИСИ ==========
+        # Отмена записи
         elif data == 'cancel_appointment':
             if user_id in self.user_data:
                 del self.user_data[user_id]
-            
             await query.edit_message_text(
-                f"{Emoji.CANCEL} **Запись отменена**",
-                reply_markup=self.keyboards.main_menu(is_admin),
-                parse_mode=ParseMode.MARKDOWN
+                f"{Emoji.CANCEL} Запись отменена",
+                reply_markup=self.keyboards.main_menu(is_admin)
             )
             return ConversationHandler.END
         
@@ -1141,51 +853,44 @@ class DentalClinicBot:
             success = self.google_sheets.cancel_appointment(date, time, user_id)
             
             if success:
-                text = f"{Emoji.SUCCESS} **Запись успешно отменена**\n\n📅 {date} в {time}"
+                text = f"{Emoji.SUCCESS} Запись отменена\n{date} {time}"
             else:
-                text = f"{Emoji.ERROR} **Не удалось отменить запись**\n\nПопробуйте позже или позвоните в клинику"
+                text = f"{Emoji.ERROR} Не удалось отменить запись"
             
             await query.edit_message_text(
                 text,
-                reply_markup=self.keyboards.main_menu(is_admin),
-                parse_mode=ParseMode.MARKDOWN
+                reply_markup=self.keyboards.main_menu(is_admin)
             )
         
-        # ========== МОИ ЗАПИСИ ==========
+        # Мои записи
         elif data == 'my_appointments':
             appointments = self.google_sheets.get_user_appointments(user_id)
             
             if not appointments:
                 await query.edit_message_text(
-                    f"{Emoji.CALENDAR} **У вас пока нет записей**\n\n"
-                    f"Вы можете записаться на прием через главное меню",
-                    reply_markup=self.keyboards.main_menu(is_admin),
-                    parse_mode=ParseMode.MARKDOWN
+                    f"{Emoji.INFO} У вас нет записей",
+                    reply_markup=self.keyboards.main_menu(is_admin)
                 )
             else:
                 active = [a for a in appointments if a.get('Статус') == 'Подтверждена']
-                past = [a for a in appointments if a.get('Статус') != 'Подтверждена']
                 
                 if not active:
-                    text = f"{Emoji.INFO} **У вас нет активных записей**\n\n"
-                    if past:
-                        text += f"Всего записей: {len(appointments)}"
+                    await query.edit_message_text(
+                        f"{Emoji.INFO} Нет активных записей",
+                        reply_markup=self.keyboards.main_menu(is_admin)
+                    )
                 else:
-                    text = f"{Emoji.CHECK} **Ваши активные записи ({len(active)})**\n\n"
+                    text = f"{Emoji.CHECK} Ваши записи:\n\n"
                     for app in active[:3]:
-                        text += (
-                            f"{Emoji.CALENDAR} **{app['Дата']}** в **{app['Время']}**\n"
-                            f"{Emoji.DOCTOR} {app['Врач'][:40]}...\n"
-                            f"{Emoji.ACTIVE} {app['Статус']}\n\n"
-                        )
-                
-                await query.edit_message_text(
-                    text,
-                    reply_markup=self.keyboards.my_appointments_keyboard(active),
-                    parse_mode=ParseMode.MARKDOWN
-                )
+                        text += f"{Emoji.CALENDAR} {app['Дата']} {app['Время']}\n"
+                        text += f"{Emoji.DOCTOR} {app['Врач'][:30]}...\n\n"
+                    
+                    await query.edit_message_text(
+                        text,
+                        reply_markup=self.keyboards.my_appointments_keyboard(active)
+                    )
         
-        # ========== ПРОСМОТР ЗАПИСИ ==========
+        # Просмотр записи
         elif data.startswith('view_'):
             parts = data.split('_')
             date = parts[1]
@@ -1195,109 +900,84 @@ class DentalClinicBot:
             appointment = None
             
             for app in appointments:
-                if app.get('Дата') == date and app.get('Время') == time:
+                if app['Дата'] == date and app['Время'] == time:
                     appointment = app
                     break
             
             if appointment:
                 text = (
                     f"{Emoji.CHECK} **Детали записи**\n\n"
-                    f"{Emoji.CALENDAR} **Дата:** {appointment['Дата']}\n"
-                    f"{Emoji.CLOCK} **Время:** {appointment['Время']}\n"
-                    f"{Emoji.DOCTOR} **Врач:** {appointment['Врач']}\n"
-                    f"{Emoji.USER} **Пациент:** {appointment['Пациент']}\n"
-                    f"{Emoji.PHONE} **Телефон:** {appointment['Телефон']}\n"
-                    f"{Emoji.ACTIVE} **Статус:** {appointment['Статус']}\n"
-                    f"🆔 ID: {appointment.get('ID', 'Н/Д')}\n\n"
-                    f"{Emoji.INFO} Для отмены нажмите кнопку ниже"
+                    f"{Emoji.CALENDAR} Дата: {appointment['Дата']}\n"
+                    f"{Emoji.CLOCK} Время: {appointment['Время']}\n"
+                    f"{Emoji.DOCTOR} Врач: {appointment['Врач'][:40]}...\n"
+                    f"{Emoji.USER} Пациент: {appointment['Пациент']}\n"
+                    f"{Emoji.PHONE} Телефон: {appointment['Телефон']}\n"
+                    f"{Emoji.ACTIVE} Статус: {appointment['Статус']}"
                 )
                 
                 await query.edit_message_text(
                     text,
-                    reply_markup=self.keyboards.appointment_actions_keyboard(date, time),
+                    reply_markup=self.keyboards.cancel_appointment_keyboard(date, time),
                     parse_mode=ParseMode.MARKDOWN
                 )
                 return VIEWING_APPOINTMENT
         
-        # ========== FAQ ==========
+        # FAQ
         elif data == 'faq':
             await query.edit_message_text(
-                f"{Emoji.QUESTION} **Часто задаваемые вопросы**\n\n"
-                f"Выберите интересующий вопрос:",
-                reply_markup=self.keyboards.faq_keyboard(),
-                parse_mode=ParseMode.MARKDOWN
+                f"{Emoji.QUESTION} Часто задаваемые вопросы:",
+                reply_markup=self.keyboards.faq_keyboard()
             )
         
         elif data.startswith('faq_'):
             question = data[4:]
-            answer = self.config.FAQ.get(question, "Информация временно недоступна")
-            
+            answer = self.config.FAQ.get(question, "Информация недоступна")
             await query.edit_message_text(
                 f"**{question}**\n\n{answer}",
                 reply_markup=self.keyboards.faq_keyboard(),
                 parse_mode=ParseMode.MARKDOWN
             )
         
-        # ========== О КЛИНИКЕ ==========
+        # О клинике
         elif data == 'about':
             text = (
                 f"{Emoji.HOSPITAL} **О клинике**\n\n"
-                f"🏥 Современная стоматологическая клиника\n"
-                f"📅 Основана в 2010 году\n\n"
-                f"**Преимущества:**\n"
-                f"{Emoji.BULLET} 5 опытных врачей\n"
-                f"{Emoji.BULLET} Современное оборудование\n"
-                f"{Emoji.BULLET} Безболезненное лечение\n"
-                f"{Emoji.BULLET} Стерилизация по стандартам ЕС\n"
-                f"{Emoji.BULLET} Детский уголок\n"
-                f"{Emoji.BULLET} Бесплатная парковка\n\n"
-                f"{Emoji.CLOCK} Режим работы: 9:00 - 20:00 (без выходных)"
+                f"• Современная стоматология с 2010\n"
+                f"• 5 опытных врачей\n"
+                f"• Безболезненное лечение\n"
+                f"• Бесплатная парковка\n\n"
+                f"{Emoji.CLOCK} 9:00-20:00 без выходных"
             )
-            
             await query.edit_message_text(
                 text,
                 reply_markup=self.keyboards.main_menu(is_admin),
                 parse_mode=ParseMode.MARKDOWN
             )
         
-        # ========== КОНТАКТЫ ==========
+        # Контакты
         elif data == 'contacts':
             text = (
                 f"{Emoji.PHONE} **Контакты**\n\n"
-                f"📞 Телефон: +7 (999) 123-45-67\n"
-                f"📧 Email: info@dentclinic.ru\n\n"
-                f"{Emoji.LOCATION} **Адрес:**\n"
-                f"г. Москва, ул. Ленина, д. 10\n\n"
-                f"{Emoji.MAP} **Как добраться:**\n"
-                f"Метро «Парк Культуры», выход №3\n"
-                f"5 минут пешком\n\n"
-                f"{Emoji.CAR} **Парковка:**\n"
-                f"Бесплатная для пациентов\n\n"
-                f"{Emoji.CLOCK} **Режим работы:**\n"
-                f"Ежедневно: 9:00 - 20:00"
+                f"📞 +7 (999) 123-45-67\n"
+                f"{Emoji.LOCATION} Москва, ул. Ленина, д. 10\n"
+                f"{Emoji.MAP} Метро: Парк Культуры\n"
+                f"{Emoji.CAR} Парковка: бесплатно"
             )
-            
             await query.edit_message_text(
                 text,
                 reply_markup=self.keyboards.main_menu(is_admin),
                 parse_mode=ParseMode.MARKDOWN
             )
         
-        # ========== АДМИН-ПАНЕЛЬ ==========
-        elif data == 'admin_panel':
+        # Админ-панель
+        elif data == 'admin':
             if not is_admin:
-                await query.edit_message_text(
-                    f"{Emoji.ERROR} **Доступ запрещен**",
-                    reply_markup=self.keyboards.main_menu(is_admin),
-                    parse_mode=ParseMode.MARKDOWN
-                )
+                await query.edit_message_text(f"{Emoji.ERROR} Доступ запрещен")
                 return
             
             await query.edit_message_text(
-                f"{Emoji.CROWN} **Панель администратора**\n\n"
-                f"Выберите действие:",
-                reply_markup=self.keyboards.admin_panel(),
-                parse_mode=ParseMode.MARKDOWN
+                f"{Emoji.CROWN} Панель администратора:",
+                reply_markup=self.keyboards.admin_keyboard()
             )
         
         elif data == 'admin_today':
@@ -1307,153 +987,123 @@ class DentalClinicBot:
             appointments = self.google_sheets.get_today_appointments()
             
             if not appointments:
-                text = f"{Emoji.CALENDAR} **На сегодня записей нет**"
+                text = f"{Emoji.CALENDAR} На сегодня записей нет"
             else:
-                text = f"{Emoji.CALENDAR} **Записи на сегодня ({len(appointments)})**\n\n"
+                text = f"{Emoji.CALENDAR} Записи на сегодня ({len(appointments)}):\n\n"
                 for app in appointments:
-                    text += (
-                        f"{Emoji.CLOCK} {app['Время']}\n"
-                        f"{Emoji.USER} {app['Пациент']}\n"
-                        f"{Emoji.PHONE} {app['Телефон']}\n"
-                        f"{Emoji.DOCTOR} {app['Врач'][:30]}...\n\n"
-                    )
+                    text += f"{Emoji.CLOCK} {app['Время']} - {app['Пациент']}\n"
+                    text += f"{Emoji.DOCTOR} {app['Врач'][:30]}...\n\n"
             
             await query.edit_message_text(
                 text,
-                reply_markup=self.keyboards.admin_panel(),
-                parse_mode=ParseMode.MARKDOWN
+                reply_markup=self.keyboards.admin_keyboard()
             )
         
         elif data == 'admin_stats':
             if not is_admin:
                 return
             
-            stats = self.google_sheets.get_appointment_stats()
+            all_records = self.google_sheets.sheet.get_all_records() if self.google_sheets.sheet else []
+            today = datetime.now().strftime('%d.%m.%Y')
+            
+            total = len(all_records)
+            confirmed = len([r for r in all_records if r.get('Статус') == 'Подтверждена'])
+            today_count = len([r for r in all_records if r.get('Дата') == today])
             
             text = (
                 f"{Emoji.STATS} **Статистика**\n\n"
-                f"📊 Всего записей: {stats.get('total', 0)}\n"
-                f"{Emoji.CHECK} Подтверждено: {stats.get('confirmed', 0)}\n"
-                f"{Emoji.CANCEL} Отменено: {stats.get('cancelled', 0)}\n"
-                f"{Emoji.CALENDAR} На сегодня: {stats.get('today', 0)}\n\n"
-                f"👨‍⚕️ Врачей: {len(self.config.DOCTORS)}\n"
-                f"👥 Пациентов: ?\n\n"
+                f"📊 Всего записей: {total}\n"
+                f"{Emoji.CHECK} Активных: {confirmed}\n"
+                f"{Emoji.CALENDAR} На сегодня: {today_count}\n"
+                f"{Emoji.DOCTOR} Врачей: {len(self.config.DOCTORS)}\n\n"
                 f"🕐 {datetime.now().strftime('%d.%m.%Y %H:%M')}"
             )
             
             await query.edit_message_text(
                 text,
-                reply_markup=self.keyboards.admin_panel(),
+                reply_markup=self.keyboards.admin_keyboard(),
                 parse_mode=ParseMode.MARKDOWN
             )
         
-        # ========== НАВИГАЦИЯ ==========
+        # Навигация
         elif data == 'back_to_doctors':
             await query.edit_message_text(
-                f"{Emoji.DOCTOR} **Выберите врача:**",
-                reply_markup=self.keyboards.doctors_keyboard(),
-                parse_mode=ParseMode.MARKDOWN
+                f"{Emoji.DOCTOR} Выберите врача:",
+                reply_markup=self.keyboards.doctors_keyboard()
             )
             return SELECTING_DOCTOR
         
         elif data == 'back_to_dates':
             await query.edit_message_text(
-                f"{Emoji.CALENDAR} **Выберите дату:**",
-                reply_markup=self.keyboards.date_keyboard(),
-                parse_mode=ParseMode.MARKDOWN
+                f"{Emoji.CALENDAR} Выберите дату:",
+                reply_markup=self.keyboards.date_keyboard()
             )
             return SELECTING_DATE
         
         return ConversationHandler.END
     
     # ========================================================================
-    # ОБРАБОТЧИКИ ТЕКСТА
+    # ОБРАБОТЧИКИ ТЕКСТА - ИСПРАВЛЕНЫ
     # ========================================================================
     
     async def get_name(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Получение ФИО пациента - ИСПРАВЛЕНО"""
+        """Получение ФИО пациента"""
         user_id = update.effective_user.id
         name = update.message.text.strip()
         
-        print(f"📝 ПОЛУЧЕНО ФИО: {name} от пользователя {user_id}")
+        print(f"📝 ПОЛУЧЕНО ФИО: {name}")
         
-        # Проверяем наличие данных
         if user_id not in self.user_data:
             self.user_data[user_id] = AppointmentData()
-            print(f"⚠️ СОЗДАНЫ НОВЫЕ ДАННЫЕ для {user_id}")
         
-        # Валидация ФИО
         if len(name) < 5:
             await update.message.reply_text(
-                f"{Emoji.CANCEL} **Слишком короткое ФИО**\n\n"
-                f"Минимальная длина - 5 символов.\n"
-                f"Пример: Иванов Иван Иванович",
-                parse_mode=ParseMode.MARKDOWN
+                f"{Emoji.CANCEL} Слишком короткое ФИО.\n"
+                f"Пример: Иванов Иван Иванович"
             )
             return GETTING_NAME
         
-        if any(char.isdigit() for char in name):
+        if any(c.isdigit() for c in name):
             await update.message.reply_text(
-                f"{Emoji.CANCEL} **ФИО не должно содержать цифры**\n\n"
-                f"Пожалуйста, введите только буквы:",
-                parse_mode=ParseMode.MARKDOWN
+                f"{Emoji.CANCEL} ФИО не должно содержать цифры.\n"
+                f"Введите только буквы:"
             )
             return GETTING_NAME
         
-        # Сохраняем ФИО
         self.user_data[user_id].patient_name = name
         print(f"✅ ФИО СОХРАНЕНО: {name}")
-        print(f"📋 ТЕКУЩИЕ ДАННЫЕ: {self.user_data[user_id]}")
         
-        # Запрашиваем телефон
         await update.message.reply_text(
-            f"{Emoji.CHECK} **Спасибо, {name.split()[0]}!**\n\n"
-            f"{Emoji.PHONE} **Введите номер телефона**\n\n"
-            f"Форматы:\n"
-            f"• +79991234567\n"
-            f"• 89991234567\n"
-            f"• 79991234567\n\n"
-            f"{Emoji.INFO} Номер нужен для связи и регистратуры",
-            parse_mode=ParseMode.MARKDOWN
+            f"{Emoji.CHECK} Спасибо, {name.split()[0]}!\n\n"
+            f"{Emoji.PHONE} Введите номер телефона:\n"
+            f"+79991234567 или 89991234567"
         )
         
         return GETTING_PHONE
     
     async def get_phone(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Получение телефона и сохранение записи - ИСПРАВЛЕНО"""
+        """Получение телефона и сохранение записи"""
         user_id = update.effective_user.id
         phone_raw = update.message.text.strip()
         
-        print(f"📞 ПОЛУЧЕН ТЕЛЕФОН: {phone_raw} от {user_id}")
+        print(f"📞 ПОЛУЧЕН ТЕЛЕФОН: {phone_raw}")
         
-        # Проверяем наличие данных
         if user_id not in self.user_data:
             await update.message.reply_text(
-                f"{Emoji.ERROR} **Ошибка данных**\n\n"
-                f"Информация о записи не найдена.\n"
-                f"Пожалуйста, начните запись заново.",
-                reply_markup=self.keyboards.main_menu(user_id in self.config.ADMIN_IDS),
-                parse_mode=ParseMode.MARKDOWN
+                f"{Emoji.ERROR} Ошибка. Начните запись заново.",
+                reply_markup=self.keyboards.main_menu(user_id in self.config.ADMIN_IDS)
             )
             return ConversationHandler.END
         
-        # Очищаем телефон от лишних символов
         phone_clean = re.sub(r'[\s\-\(\)]', '', phone_raw)
         
-        # Валидация телефона
         if not re.match(r'^(\+7|8|7)?\d{10}$', phone_clean):
             await update.message.reply_text(
-                f"{Emoji.CANCEL} **Неверный формат телефона**\n\n"
-                f"Правильные форматы:\n"
-                f"• +79991234567\n"
-                f"• 89991234567\n"
-                f"• 79991234567\n\n"
-                f"Попробуйте снова:",
-                parse_mode=ParseMode.MARKDOWN
+                f"{Emoji.CANCEL} Неверный формат.\n"
+                f"Используйте: +79991234567 или 89991234567"
             )
             return GETTING_PHONE
         
-        # Приводим к единому формату +7XXXXXXXXXX
         if len(phone_clean) == 10:
             phone = f"+7{phone_clean}"
         elif phone_clean.startswith('8'):
@@ -1463,39 +1113,16 @@ class DentalClinicBot:
         else:
             phone = phone_clean
         
-        # Получаем данные записи
         appointment = self.user_data[user_id]
         appointment.patient_phone = phone
         appointment.telegram_id = user_id
         appointment.username = update.effective_user.username or ''
-        appointment.created_at = datetime.now().strftime('%d.%m.%Y %H:%M:%S')
         
-        print(f"💾 СОХРАНЕНИЕ ЗАПИСИ В GOOGLE SHEETS:")
-        print(f"   Дата: {appointment.date}")
-        print(f"   Время: {appointment.time}")
-        print(f"   Врач: {appointment.doctor_name}")
-        print(f"   Пациент: {appointment.patient_name}")
-        print(f"   Телефон: {phone}")
-        print(f"   Telegram ID: {user_id}")
+        print(f"💾 СОХРАНЕНИЕ В GOOGLE SHEETS:")
+        print(f"   {appointment.date} {appointment.time}")
+        print(f"   {appointment.doctor_name}")
+        print(f"   {appointment.patient_name} {phone}")
         
-        # Проверяем наличие всех обязательных полей
-        missing_fields = []
-        if not appointment.date: missing_fields.append("дата")
-        if not appointment.time: missing_fields.append("время")
-        if not appointment.doctor_name: missing_fields.append("врач")
-        if not appointment.patient_name: missing_fields.append("ФИО")
-        
-        if missing_fields:
-            await update.message.reply_text(
-                f"{Emoji.ERROR} **Ошибка: не хватает данных**\n\n"
-                f"Отсутствуют: {', '.join(missing_fields)}\n"
-                f"Пожалуйста, начните запись заново.",
-                reply_markup=self.keyboards.main_menu(user_id in self.config.ADMIN_IDS),
-                parse_mode=ParseMode.MARKDOWN
-            )
-            return ConversationHandler.END
-        
-        # Сохраняем запись в Google Sheets
         success = self.google_sheets.add_appointment(
             date=appointment.date,
             time=appointment.time,
@@ -1507,82 +1134,50 @@ class DentalClinicBot:
         )
         
         if success:
-            # Форматируем дату для красивого отображения
-            try:
-                dt = datetime.strptime(appointment.date, '%d.%m.%Y')
-                months = {
-                    1: 'января', 2: 'февраля', 3: 'марта',
-                    4: 'апреля', 5: 'мая', 6: 'июня',
-                    7: 'июля', 8: 'августа', 9: 'сентября',
-                    10: 'октября', 11: 'ноября', 12: 'декабря'
-                }
-                date_display = f"{dt.day} {months[dt.month]}"
-            except:
-                date_display = appointment.date
-            
-            # Сообщение об успешной записи
-            success_text = (
-                f"{Emoji.SUCCESS} **ЗАПИСЬ ПОДТВЕРЖДЕНА!** {Emoji.SUCCESS}\n\n"
-                
-                f"{Emoji.CALENDAR} **Дата:** {date_display}\n"
-                f"{Emoji.CLOCK} **Время:** {appointment.time}\n"
-                f"{Emoji.DOCTOR} **Врач:** {appointment.doctor_name}\n"
-                f"{Emoji.USER} **Пациент:** {appointment.patient_name}\n"
-                f"{Emoji.PHONE} **Телефон:** {phone}\n\n"
-                
-                f"{Emoji.BELL} **Что дальше?**\n\n"
-                f"1️⃣ Мы отправим напоминание за 2 часа до приема\n"
-                f"2️⃣ Приходите за 5 минут до назначенного времени\n"
-                f"3️⃣ При себе иметь паспорт\n\n"
-                f"{Emoji.HEART} **Спасибо, что выбрали нас!**\n"
-                f"Ждем вас на приеме!"
+            text = (
+                f"{Emoji.SUCCESS} **ЗАПИСЬ ПОДТВЕРЖДЕНА!**\n\n"
+                f"{Emoji.CALENDAR} Дата: {appointment.date}\n"
+                f"{Emoji.CLOCK} Время: {appointment.time}\n"
+                f"{Emoji.DOCTOR} Врач: {appointment.doctor_name}\n"
+                f"{Emoji.USER} Пациент: {appointment.patient_name}\n\n"
+                f"{Emoji.BELL} Напоминание придет за 2 часа\n"
+                f"{Emoji.HEART} Спасибо! Ждем вас."
             )
             
             await update.message.reply_text(
-                success_text,
+                text,
                 reply_markup=self.keyboards.main_menu(user_id in self.config.ADMIN_IDS),
                 parse_mode=ParseMode.MARKDOWN
             )
             
-            # Отправляем уведомление администраторам
             for admin_id in self.config.ADMIN_IDS:
                 try:
                     admin_text = (
-                        f"{Emoji.BELL} **НОВАЯ ЗАПИСЬ!**\n\n"
+                        f"{Emoji.BELL} НОВАЯ ЗАПИСЬ\n\n"
                         f"📅 {appointment.date}\n"
                         f"⏰ {appointment.time}\n"
                         f"👨‍⚕️ {appointment.doctor_name}\n"
                         f"👤 {appointment.patient_name}\n"
                         f"📞 {phone}\n"
-                        f"🆔 {user_id}\n"
-                        f"📱 @{appointment.username or 'нет'}\n"
-                        f"🕐 {appointment.created_at}"
+                        f"🆔 {user_id}"
                     )
-                    
                     await context.bot.send_message(
                         chat_id=admin_id,
-                        text=admin_text,
-                        parse_mode=ParseMode.MARKDOWN
+                        text=admin_text
                     )
-                except Exception as e:
-                    print(f"{Emoji.ERROR} Ошибка отправки админу {admin_id}: {e}")
+                except:
+                    pass
             
-            print(f"{Emoji.SUCCESS} ЗАПИСЬ УСПЕШНО СОХРАНЕНА ДЛЯ {user_id}")
-            
+            print(f"{Emoji.SUCCESS} ЗАПИСЬ СОХРАНЕНА")
         else:
             await update.message.reply_text(
-                f"{Emoji.ERROR} **Ошибка при сохранении записи**\n\n"
-                f"Пожалуйста, попробуйте позже или свяжитесь с нами по телефону:\n"
+                f"{Emoji.ERROR} Ошибка сохранения. Позвоните нам:\n"
                 f"{Emoji.PHONE} +7 (999) 123-45-67",
-                reply_markup=self.keyboards.main_menu(user_id in self.config.ADMIN_IDS),
-                parse_mode=ParseMode.MARKDOWN
+                reply_markup=self.keyboards.main_menu(user_id in self.config.ADMIN_IDS)
             )
-            print(f"{Emoji.ERROR} ОШИБКА СОХРАНЕНИЯ ЗАПИСИ ДЛЯ {user_id}")
         
-        # Очищаем временные данные
         if user_id in self.user_data:
             del self.user_data[user_id]
-            print(f"🧹 ДАННЫЕ ПОЛЬЗОВАТЕЛЯ {user_id} ОЧИЩЕНЫ")
         
         return ConversationHandler.END
     
@@ -1595,39 +1190,23 @@ class DentalClinicBot:
         try:
             self.application = Application.builder().token(self.config.BOT_TOKEN).build()
             
-            # ======== КОМАНДЫ ========
             self.application.add_handler(CommandHandler('start', self.start))
             self.application.add_handler(CommandHandler('cancel', self.cancel))
             
-            # ======== КОНВЕРСАЦИЯ ЗАПИСИ ========
-            appointment_conv = ConversationHandler(
-                entry_points=[
-                    CallbackQueryHandler(self.button_handler, pattern='^appointment$')
-                ],
+            conv_handler = ConversationHandler(
+                entry_points=[CallbackQueryHandler(self.button_handler, pattern='^appointment$')],
                 states={
                     SELECTING_DOCTOR: [
-                        CallbackQueryHandler(
-                            self.button_handler,
-                            pattern='^(doctor_|back_to_menu|back_to_doctors|doctors)$'
-                        )
+                        CallbackQueryHandler(self.button_handler, pattern='^(doctor_|back_to_menu|back_to_doctors|doctors)$')
                     ],
                     SELECTING_DATE: [
-                        CallbackQueryHandler(
-                            self.button_handler,
-                            pattern='^(date_|back_to_doctors|back_to_menu)$'
-                        )
+                        CallbackQueryHandler(self.button_handler, pattern='^(date_|back_to_doctors|back_to_menu)$')
                     ],
                     SELECTING_TIME: [
-                        CallbackQueryHandler(
-                            self.button_handler,
-                            pattern='^(time_|back_to_dates|back_to_menu)$'
-                        )
+                        CallbackQueryHandler(self.button_handler, pattern='^(time_|back_to_dates|back_to_menu)$')
                     ],
                     CONFIRMING: [
-                        CallbackQueryHandler(
-                            self.button_handler,
-                            pattern='^(confirm_|cancel_appointment|back_to_menu)$'
-                        )
+                        CallbackQueryHandler(self.button_handler, pattern='^(confirm_|cancel_appointment|back_to_menu)$')
                     ],
                     GETTING_NAME: [
                         MessageHandler(filters.TEXT & ~filters.COMMAND, self.get_name)
@@ -1636,47 +1215,39 @@ class DentalClinicBot:
                         MessageHandler(filters.TEXT & ~filters.COMMAND, self.get_phone)
                     ],
                     VIEWING_APPOINTMENT: [
-                        CallbackQueryHandler(
-                            self.button_handler,
-                            pattern='^(cancel_|my_appointments|back_to_menu)$'
-                        )
+                        CallbackQueryHandler(self.button_handler, pattern='^(cancel_|my_appointments|back_to_menu)$')
                     ]
                 },
                 fallbacks=[
                     CommandHandler('cancel', self.cancel),
                     CallbackQueryHandler(self.button_handler, pattern='^back_to_menu$')
-                ],
-                name="appointment_conversation",
-                persistent=False
+                ]
             )
             
-            self.application.add_handler(appointment_conv)
+            self.application.add_handler(conv_handler)
             self.application.add_handler(CallbackQueryHandler(self.button_handler))
             
-            # ======== ПЛАНИРОВЩИК НАПОМИНАНИЙ ========
             if self.google_sheets.client:
                 self.reminder_scheduler = ReminderScheduler(self.application.bot, self.google_sheets)
             
-            # ======== ЗАПУСК ========
-            print("\n" + "="*60)
-            print(f"{Emoji.TOOTH} СТОМАТОЛОГИЧЕСКИЙ БОТ - ПРЕМИУМ ВЕРСИЯ")
-            print("="*60)
-            print(f"{Emoji.CHECK} Токен: {self.config.BOT_TOKEN[:15]}...")
-            print(f"{Emoji.DOCTOR} Врачей: {len(self.config.DOCTORS)}")
-            print(f"{Emoji.CROWN} Админов: {len(self.config.ADMIN_IDS)}")
-            print(f"{Emoji.CHECK} Google Sheets: {'✅' if self.google_sheets.client else '❌'}")
-            print(f"{Emoji.CHECK} Планировщик: {'✅' if self.reminder_scheduler else '❌'}")
-            print("="*60 + "\n")
+            print("\n" + "="*50)
+            print("🚀 СТОМАТОЛОГИЧЕСКИЙ БОТ ЗАПУЩЕН")
+            print("="*50)
+            print(f"✅ Токен: {self.config.BOT_TOKEN[:10]}...")
+            print(f"👨‍⚕️ Врачей: {len(self.config.DOCTORS)}")
+            print(f"👑 Админов: {len(self.config.ADMIN_IDS)}")
+            print(f"📊 Google Sheets: {'✅' if self.google_sheets.client else '❌'}")
+            print("="*50 + "\n")
             
             self.application.run_polling(allowed_updates=Update.ALL_TYPES)
             
         except Exception as e:
-            print(f"{Emoji.ERROR} Критическая ошибка: {e}")
+            print(f"❌ Ошибка: {e}")
             raise
 
 
 # ============================================================================
-# ТОЧКА ВХОДА
+# ЗАПУСК
 # ============================================================================
 
 if __name__ == '__main__':
@@ -1684,8 +1255,8 @@ if __name__ == '__main__':
         bot = DentalClinicBot()
         bot.run()
     except KeyboardInterrupt:
-        print(f"\n{Emoji.CANCEL} Бот остановлен пользователем")
+        print(f"\n👋 Бот остановлен")
         sys.exit(0)
     except Exception as e:
-        print(f"\n{Emoji.ERROR} Ошибка запуска: {e}")
+        print(f"\n❌ Ошибка запуска: {e}")
         sys.exit(1)
