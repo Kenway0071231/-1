@@ -1,3 +1,340 @@
+"""
+СТОМАТОЛОГИЧЕСКИЙ БОТ - ПРЕМИУМ ВЕРСИЯ
+Версия: 3.0.1 (ИСПРАВЛЕНЫ ВСЕ ОШИБКИ)
+"""
+
+import logging
+import re
+import sys
+import os
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass
+from collections import defaultdict
+
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    CallbackQueryHandler,
+    ConversationHandler,
+    MessageHandler,
+    filters,
+    ContextTypes
+)
+from telegram.constants import ParseMode
+from dotenv import load_dotenv
+
+# Загружаем переменные окружения
+load_dotenv()
+
+# ============================================================================
+# ДИЗАЙН-СИСТЕМА
+# ============================================================================
+
+class Emoji:
+    """Единая система эмодзи"""
+    # Основные
+    CHECK = "✅"
+    CANCEL = "❌"
+    WARNING = "⚠️"
+    INFO = "ℹ️"
+    SUCCESS = "🎉"
+    ERROR = "‼️"
+    WAITING = "⏳"
+    
+    # Навигация
+    BACK = "◀️"
+    HOME = "🏠"
+    MENU = "📋"
+    
+    # Медицина
+    DOCTOR = "👨‍⚕️"
+    DOCTOR_WOMAN = "👩‍⚕️"
+    HOSPITAL = "🏥"
+    TOOTH = "🦷"
+    SYRINGE = "💉"
+    STETHOSCOPE = "🩺"
+    
+    # Время
+    CALENDAR = "📅"
+    CLOCK = "🕐"
+    BELL = "🔔"
+    
+    # Контакты
+    PHONE = "📞"
+    LOCATION = "📍"
+    MAP = "🗺️"
+    CAR = "🚗"
+    SEARCH = "🔍"
+    
+    # Действия
+    EDIT = "✏️"
+    
+    # Статусы
+    ACTIVE = "🟢"
+    
+    # Другое
+    STAR = "⭐"
+    HEART = "❤️"
+    SPARKLES = "✨"
+    MONEY = "💰"
+    QUESTION = "❓"
+    DOTS = "..."
+    CROWN = "👑"
+    USER = "👤"
+
+
+# ============================================================================
+# МОДЕЛИ ДАННЫХ
+# ============================================================================
+
+@dataclass
+class Doctor:
+    """Модель врача"""
+    id: str
+    name: str
+    specialty: str
+    experience: int
+    description: str
+    education: str
+    rating: float
+
+
+@dataclass
+class AppointmentData:
+    """Данные для записи"""
+    doctor_id: str = ""
+    doctor_name: str = ""
+    date: str = ""
+    time: str = ""
+    patient_name: str = ""
+    patient_phone: str = ""
+
+
+# ============================================================================
+# КОНФИГУРАЦИЯ
+# ============================================================================
+
+class Config:
+    """Конфигурация бота"""
+    
+    BOT_TOKEN = os.getenv('BOT_TOKEN')
+    GOOGLE_SHEETS_ID = os.getenv('GOOGLE_SHEETS_ID')
+    ADMIN_IDS = [int(id.strip()) for id in os.getenv('ADMIN_IDS', '').split(',') if id.strip()]
+    
+    DOCTORS = {
+        '1': Doctor(
+            id='1',
+            name='Иванова Мария Петровна',
+            specialty='Стоматолог-терапевт',
+            experience=15,
+            description='Специалист по лечению кариеса, пульпита, эндодонтии.',
+            education='МГМСУ им. Сеченова, 2009',
+            rating=4.9
+        ),
+        '2': Doctor(
+            id='2',
+            name='Петров Сергей Иванович',
+            specialty='Стоматолог-хирург',
+            experience=12,
+            description='Проводит удаление любой сложности, имплантацию.',
+            education='РУДН, 2012',
+            rating=4.8
+        ),
+        '3': Doctor(
+            id='3',
+            name='Сидорова Анна Викторовна',
+            specialty='Стоматолог-ортодонт',
+            experience=10,
+            description='Исправление прикуса у взрослых и детей.',
+            education='МГМСУ, 2014',
+            rating=4.9
+        ),
+        '4': Doctor(
+            id='4',
+            name='Козлов Алексей Николаевич',
+            specialty='Стоматолог-ортопед',
+            experience=20,
+            description='Протезирование любой сложности.',
+            education='СПбГМУ, 2004',
+            rating=5.0
+        ),
+        '5': Doctor(
+            id='5',
+            name='Соколова Елена Дмитриевна',
+            specialty='Детский стоматолог',
+            experience=8,
+            description='Лечение детей с 3 лет.',
+            education='РНИМУ им. Пирогова, 2016',
+            rating=4.9
+        )
+    }
+    
+    WORK_HOURS = [
+        '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+        '12:00', '12:30', '14:00', '14:30', '15:00', '15:30',
+        '16:00', '16:30', '17:00', '17:30', '18:00', '18:30'
+    ]
+
+
+# ============================================================================
+# GOOGLE SHEETS МЕНЕДЖЕР
+# ============================================================================
+
+class GoogleSheetsManager:
+    """Управление Google Sheets"""
+    
+    def __init__(self):
+        self.client = None
+        self.appointments_sheet = None
+        self.authenticate()
+    
+    def authenticate(self):
+        """Аутентификация"""
+        try:
+            import gspread
+            from google.oauth2.service_account import Credentials
+            
+            if os.path.exists('credentials.json'):
+                scope = [
+                    'https://spreadsheets.google.com/feeds',
+                    'https://www.googleapis.com/auth/drive',
+                    'https://www.googleapis.com/auth/spreadsheets'
+                ]
+                creds = Credentials.from_service_account_file('credentials.json', scopes=scope)
+                self.client = gspread.authorize(creds)
+                self.setup_sheets()
+                print(f"{Emoji.CHECK} Google Sheets подключен")
+        except Exception as e:
+            print(f"{Emoji.ERROR} Ошибка аутентификации: {e}")
+    
+    def setup_sheets(self):
+        """Настройка таблиц"""
+        try:
+            if Config.GOOGLE_SHEETS_ID:
+                spreadsheet = self.client.open_by_key(Config.GOOGLE_SHEETS_ID)
+            else:
+                spreadsheet = self.client.create('Стоматология - Записи')
+            
+            try:
+                self.appointments_sheet = spreadsheet.worksheet('Записи')
+            except:
+                self.appointments_sheet = spreadsheet.add_worksheet('Записи', 1000, 20)
+                headers = ['Дата', 'Время', 'Врач', 'Пациент', 'Телефон', 
+                          'Telegram ID', 'Username', 'Статус', 'Создано', 'Напоминание']
+                self.appointments_sheet.append_row(headers)
+        except Exception as e:
+            print(f"{Emoji.ERROR} Ошибка настройки таблиц: {e}")
+    
+    def add_appointment(self, date: str, time: str, doctor: str, patient_name: str, 
+                       phone: str, telegram_id: int, username: str = '') -> bool:
+        """Добавление записи"""
+        try:
+            if not self.appointments_sheet:
+                return False
+            
+            row = [
+                date,
+                time,
+                doctor,
+                patient_name,
+                phone,
+                str(telegram_id),
+                username or '-',
+                'Подтверждена',
+                datetime.now().strftime('%d.%m.%Y %H:%M'),
+                'Нет'
+            ]
+            self.appointments_sheet.append_row(row)
+            print(f"{Emoji.SUCCESS} Запись создана: {date} {time} - {patient_name}")
+            return True
+        except Exception as e:
+            print(f"{Emoji.ERROR} Ошибка добавления записи: {e}")
+            return False
+    
+    def get_available_slots(self, date: str) -> List[str]:
+        """Получение свободных слотов"""
+        try:
+            if not self.appointments_sheet:
+                return Config.WORK_HOURS
+            
+            all_records = self.appointments_sheet.get_all_records()
+            busy_times = []
+            
+            for record in all_records:
+                if record.get('Дата') == date and record.get('Статус') == 'Подтверждена':
+                    busy_times.append(record.get('Время'))
+            
+            return [t for t in Config.WORK_HOURS if t not in busy_times]
+        except:
+            return Config.WORK_HOURS
+    
+    def get_user_appointments(self, telegram_id: int) -> List[Dict]:
+        """Получение записей пользователя"""
+        try:
+            if not self.appointments_sheet:
+                return []
+            
+            all_records = self.appointments_sheet.get_all_records()
+            user_apps = []
+            
+            for record in all_records:
+                if str(record.get('Telegram ID', '')) == str(telegram_id):
+                    user_apps.append(record)
+            
+            return user_apps
+        except:
+            return []
+    
+    def cancel_appointment(self, date: str, time: str, telegram_id: int) -> bool:
+        """Отмена записи"""
+        try:
+            if not self.appointments_sheet:
+                return False
+            
+            all_records = self.appointments_sheet.get_all_records()
+            
+            for i, record in enumerate(all_records, start=2):
+                if (str(record.get('Telegram ID', '')) == str(telegram_id) and
+                    record.get('Дата') == date and
+                    record.get('Время') == time):
+                    
+                    self.appointments_sheet.update_cell(i, 8, 'Отменена')
+                    return True
+            return False
+        except:
+            return False
+
+
+# ============================================================================
+# КЛАВИАТУРЫ
+# ============================================================================
+
+class Keyboards:
+    """Клавиатуры"""
+    
+    @staticmethod
+    def main_menu() -> InlineKeyboardMarkup:
+        """Главное меню"""
+        keyboard = [
+            [InlineKeyboardButton(f"{Emoji.CALENDAR} Записаться", callback_data='appointment')],
+            [InlineKeyboardButton(f"{Emoji.DOCTOR} Врачи", callback_data='doctors')],
+            [InlineKeyboardButton(f"{Emoji.CHECK} Мои записи", callback_data='my_appointments')],
+            [InlineKeyboardButton(f"{Emoji.HOSPITAL} О клинике", callback_data='about')],
+            [InlineKeyboardButton(f"{Emoji.PHONE} Контакты", callback_data='contacts')]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+    
+    @staticmethod
+    def doctors_keyboard() -> InlineKeyboardMarkup:
+        """Выбор врача"""
+        keyboard = []
+        for doc_id, doctor in Config.DOCTORS.items():
+            icon = Emoji.DOCTOR_WOMAN if 'ва' in doctor.name else Emoji.DOCTOR
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"{icon} {doctor.name.split()[0]} {doctor.name.split()[1][0]}.",
                     callback_data=f"doctor_{doc_id}"
                 )
             ])
@@ -317,9 +654,10 @@ class DentalClinicBot:
                 doctor = self.config.DOCTORS[doctor_id]
                 self.user_data[user_id].doctor_name = f"{doctor.name} ({doctor.specialty})"
             
-            # ВАЖНО: Отправляем новое сообщение, а не редактируем старое
+            # Удаляем сообщение с подтверждением
             await query.message.delete()
             
+            # Отправляем запрос ФИО
             await context.bot.send_message(
                 chat_id=user_id,
                 text=(
@@ -487,11 +825,11 @@ class DentalClinicBot:
         return ConversationHandler.END
     
     # ========================================================================
-    # ОБРАБОТЧИКИ ТЕКСТА - ИСПРАВЛЕНО!
+    # ОБРАБОТЧИКИ ТЕКСТА
     # ========================================================================
     
     async def get_name(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Получение ФИО - ИСПРАВЛЕНО"""
+        """Получение ФИО"""
         user_id = update.effective_user.id
         name = update.message.text.strip()
         
@@ -522,7 +860,6 @@ class DentalClinicBot:
         # Сохраняем имя
         self.user_data[user_id].patient_name = name
         print(f"✅ Имя сохранено: {name}")
-        print(f"📋 Текущие данные: {self.user_data[user_id]}")
         
         # Запрашиваем телефон
         await update.message.reply_text(
@@ -536,7 +873,7 @@ class DentalClinicBot:
         return GETTING_PHONE
     
     async def get_phone(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Получение телефона и сохранение записи - ИСПРАВЛЕНО"""
+        """Получение телефона и сохранение записи"""
         user_id = update.effective_user.id
         phone_raw = update.message.text.strip()
         
@@ -552,7 +889,7 @@ class DentalClinicBot:
             )
             return ConversationHandler.END
         
-        # Очищаем телефон от лишних символов
+        # Очищаем телефон
         phone_clean = re.sub(r'[\s\-\(\)]', '', phone_raw)
         
         # Валидация
@@ -567,7 +904,7 @@ class DentalClinicBot:
             )
             return GETTING_PHONE
         
-        # Приводим к единому формату
+        # Форматируем телефон
         if len(phone_clean) == 10:
             phone = f"+7{phone_clean}"
         elif phone_clean.startswith('8'):
