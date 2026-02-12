@@ -2,7 +2,7 @@
 СТОМАТОЛОГИЧЕСКИЙ БОТ - ПРЕМИУМ ВЕРСИЯ
 Дизайн: Современный, минималистичный, дружелюбный
 Механика: Интуитивная, быстрая, без лишних действий
-Версия: 2.0.0
+Версия: 2.0.1 (ИСПРАВЛЕННАЯ)
 """
 
 import logging
@@ -76,6 +76,7 @@ class Emoji:
     EMAIL = "📧"
     MAP = "🗺️"
     LOCATION = "📍"
+    CAR = "🚗"  # ДОБАВЛЕНО
     
     # Действия
     ADD = "➕"
@@ -90,6 +91,7 @@ class Emoji:
     INACTIVE = "🔴"
     PENDING = "🟡"
     COMPLETED = "🟣"
+    STATUS_ACTIVE = "🟢"  # ДОБАВЛЕНО
     
     # Другое
     STAR = "⭐"
@@ -99,15 +101,13 @@ class Emoji:
     QUESTION = "❓"
     EXCLAMATION = "❗"
     DOTS = "..."
+    CROWN = "👑"  # ДОБАВЛЕНО
+    USER = "👤"   # ДОБАВЛЕНО
+    
+    # Специальные символы
+    DIVIDER = "─"
+    BULLET = "•"
 
-class Colors:
-    """Цветовые схемы для сообщений (используются через эмодзи и форматирование)"""
-    PRIMARY = "🔵"
-    SECONDARY = "⚪"
-    SUCCESS = "🟢"
-    WARNING = "🟡"
-    DANGER = "🔴"
-    INFO = "🟣"
 
 # ============================================================================
 # МОДЕЛИ ДАННЫХ
@@ -128,8 +128,9 @@ class Doctor:
     def full_info(self) -> str:
         """Полное описание врача"""
         stars = "⭐" * int(self.rating)
+        icon = Emoji.DOCTOR_WOMAN if 'ва' in self.name else Emoji.DOCTOR
         return (
-            f"{Emoji.DOCTOR} **{self.name}**\n"
+            f"{icon} **{self.name}**\n"
             f"└ {self.specialty}\n"
             f"└ Стаж: {self.experience} лет\n"
             f"└ Рейтинг: {stars} ({self.rating})\n"
@@ -138,7 +139,9 @@ class Doctor:
     
     def short_info(self) -> str:
         """Краткое описание врача"""
-        return f"{Emoji.DOCTOR} **{self.name}** — {self.specialty}"
+        icon = Emoji.DOCTOR_WOMAN if 'ва' in self.name else Emoji.DOCTOR
+        return f"{icon} **{self.name}** — {self.specialty}"
+
 
 @dataclass
 class Appointment:
@@ -171,6 +174,7 @@ class Appointment:
         """Полное форматирование даты и времени"""
         return f"{self.format_date()} в {self.time}"
 
+
 @dataclass
 class Patient:
     """Модель пациента"""
@@ -181,6 +185,7 @@ class Patient:
     registered_at: str
     total_appointments: int = 0
     last_visit: str = ""
+
 
 # ============================================================================
 # КОНФИГУРАЦИЯ
@@ -338,8 +343,56 @@ class Config:
             f"🧸 **Адаптация:** игровая форма\n"
             f"🛏 **Лечение во сне:** по показаниям\n\n"
             f"Наши маленькие пациенты не плачут!"
+        ),
+        'Отмена записи': (
+            f"{Emoji.CANCEL} **Отмена записи**\n\n"
+            f"Вы можете отменить запись:\n\n"
+            f"1️⃣ В боте: «Мои записи» → «Отменить»\n"
+            f"2️⃣ По телефону: +7 (999) 123-45-67\n\n"
+            f"{Emoji.INFO} Пожалуйста, отменяйте запись заранее"
+        ),
+        'Перенос': (
+            f"{Emoji.EDIT} **Перенос записи**\n\n"
+            f"Для переноса записи:\n\n"
+            f"1️⃣ Отмените текущую запись\n"
+            f"2️⃣ Запишитесь заново на удобное время\n\n"
+            f"{Emoji.PHONE} Или позвоните нам"
+        ),
+        'Оплата': (
+            f"{Emoji.MONEY} **Способы оплаты**\n\n"
+            f"💳 Наличные\n"
+            f"💳 Банковские карты\n"
+            f"💳 Перевод на карту\n"
+            f"💳 ДМС\n\n"
+            f"Работаем с НДС"
+        ),
+        'ДМС': (
+            f"{Emoji.CHECK} **ДМС**\n\n"
+            f"Мы работаем с ведущими страховыми компаниями:\n\n"
+            f"• Ингосстрах\n"
+            f"• РЕСО-Гарантия\n"
+            f"• АльфаСтрахование\n"
+            f"• Согаз\n\n"
+            f"{Emoji.PHONE} Уточните наличие полиса по телефону"
+        ),
+        'Скидки': (
+            f"{Emoji.SPARKLES} **Скидки**\n\n"
+            f"👨‍👩‍👧 **Семейная скидка** — 15%\n"
+            f"👴 **Пенсионерам** — 10%\n"
+            f"🎓 **Студентам** — 10%\n"
+            f"🎁 **Именинникам** — 20% в день рождения\n\n"
+            f"Скидки суммируются"
+        ),
+        'Анестезия': (
+            f"{Emoji.SYRINGE} **Анестезия**\n\n"
+            f"Используем:\n\n"
+            f"• Ультракаин\n"
+            f"• Убистезин\n"
+            f"• Септанест\n\n"
+            f"Противопоказания уточняйте у врача"
         )
     }
+
 
 # ============================================================================
 # GOOGLE SHEETS МЕНЕДЖЕР
@@ -554,51 +607,55 @@ class GoogleSheetsManager:
         except Exception as e:
             print(f"{Emoji.ERROR} Ошибка отмены записи: {e}")
             return False
+    
+    def get_today_appointments(self) -> List[Dict]:
+        """Получение записей на сегодня"""
+        try:
+            if not self.appointments_sheet:
+                return []
+            
+            today = datetime.now().strftime('%d.%m.%Y')
+            all_records = self.appointments_sheet.get_all_records()
+            today_apps = []
+            
+            for record in all_records:
+                if record.get('Дата') == today and record.get('Статус') == 'Подтверждена':
+                    today_apps.append(record)
+            
+            return today_apps
+            
+        except Exception as e:
+            print(f"{Emoji.ERROR} Ошибка получения записей на сегодня: {e}")
+            return []
+    
+    def mark_reminder_sent(self, date: str, time: str, telegram_id: int) -> bool:
+        """Отметить отправку напоминания"""
+        try:
+            if not self.appointments_sheet:
+                return False
+            
+            all_records = self.appointments_sheet.get_all_records()
+            
+            for i, record in enumerate(all_records, start=2):
+                if (str(record.get('Telegram ID', '')) == str(telegram_id) and
+                    record.get('Дата') == date and
+                    record.get('Время') == time):
+                    
+                    self.appointments_sheet.update_cell(
+                        i, 11, 
+                        f"Отправлено {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+                    )
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            print(f"{Emoji.ERROR} Ошибка отметки напоминания: {e}")
+            return False
+
 
 # ============================================================================
 # ДИЗАЙН-КЛАВИАТУРЫ
-# ============================================================================
-
-class DesignSystem:
-    """Система дизайна бота"""
-    
-    @staticmethod
-    def header(title: str, icon: str = "🦷") -> str:
-        """Красивый заголовок"""
-        return f"{icon} **{title}**\n{Emoji.DOTS * 3}\n"
-    
-    @staticmethod
-    def card(title: str, content: str, icon: str = "📌") -> str:
-        """Карточка с информацией"""
-        return f"{icon} **{title}**\n└ {content}\n"
-    
-    @staticmethod
-    def success_message(text: str) -> str:
-        """Сообщение об успехе"""
-        return f"{Emoji.SUCCESS} **{text}**"
-    
-    @staticmethod
-    def error_message(text: str) -> str:
-        """Сообщение об ошибке"""
-        return f"{Emoji.ERROR} **{text}**"
-    
-    @staticmethod
-    def info_message(text: str) -> str:
-        """Информационное сообщение"""
-        return f"{Emoji.INFO} {text}"
-    
-    @staticmethod
-    def list_item(number: int, text: str) -> str:
-        """Элемент списка"""
-        return f"{number}️⃣ {text}"
-    
-    @staticmethod
-    def divider() -> str:
-        """Разделитель"""
-        return f"\n{Emoji.DOTS * 10}\n"
-
-# ============================================================================
-# КЛАВИАТУРЫ (НОВЫЙ ДИЗАЙН)
 # ============================================================================
 
 class Keyboards:
@@ -606,7 +663,7 @@ class Keyboards:
     
     @staticmethod
     def main_menu() -> InlineKeyboardMarkup:
-        """Главное меню - чистый минимализм"""
+        """Главное меню"""
         keyboard = [
             [
                 InlineKeyboardButton(
@@ -643,16 +700,14 @@ class Keyboards:
     
     @staticmethod
     def doctors_keyboard() -> InlineKeyboardMarkup:
-        """Красивый выбор врача"""
+        """Клавиатура выбора врача"""
         keyboard = []
         
         for doc_id, doctor in Config.DOCTORS.items():
-            # Эмодзи в зависимости от пола
             icon = Emoji.DOCTOR_WOMAN if 'ва' in doctor.name else Emoji.DOCTOR
-            
             keyboard.append([
                 InlineKeyboardButton(
-                    f"{icon} {doctor.name.split()[1]} {doctor.specialty[:20]}...",
+                    f"{icon} {doctor.name.split()[1]} — {doctor.specialty[:15]}...",
                     callback_data=f"doctor_{doc_id}"
                 )
             ])
@@ -672,12 +727,10 @@ class Keyboards:
         keyboard = []
         today = datetime.now()
         
-        # Дни недели на русском
         days_ru = {
             0: 'ПН', 1: 'ВТ', 2: 'СР', 3: 'ЧТ', 4: 'ПТ', 5: 'СБ', 6: 'ВС'
         }
         
-        # Создаем строки по 3 кнопки
         row = []
         for i in range(7):
             date = today + timedelta(days=i)
@@ -685,7 +738,6 @@ class Keyboards:
             day_num = date.day
             day_week = days_ru[date.weekday()]
             
-            # Сегодня и завтра с подписями
             if i == 0:
                 label = f"📅 Сегодня ({day_num})"
             elif i == 1:
@@ -707,14 +759,13 @@ class Keyboards:
     
     @staticmethod
     def time_keyboard(date: str, available_times: List[str]) -> InlineKeyboardMarkup:
-        """Выбор времени - компактно и удобно"""
+        """Выбор времени"""
         keyboard = []
         row = []
         
         for i, time in enumerate(available_times, 1):
             row.append(InlineKeyboardButton(time, callback_data=f"time_{date}_{time}"))
             
-            # По 4 кнопки в ряд
             if len(row) == 4:
                 keyboard.append(row)
                 row = []
@@ -730,7 +781,7 @@ class Keyboards:
     
     @staticmethod
     def confirm_keyboard(date: str, time: str, doctor_id: str) -> InlineKeyboardMarkup:
-        """Кнопки подтверждения с эмодзи"""
+        """Кнопки подтверждения"""
         keyboard = [
             [
                 InlineKeyboardButton(
@@ -794,7 +845,7 @@ class Keyboards:
         """Кнопки для управления записями"""
         keyboard = []
         
-        for app in appointments[:3]:  # Показываем только 3 ближайших
+        for app in appointments[:3]:
             if app['Статус'] == 'Подтверждена':
                 keyboard.append([
                     InlineKeyboardButton(
@@ -811,7 +862,7 @@ class Keyboards:
     
     @staticmethod
     def appointment_actions_keyboard(date: str, time: str) -> InlineKeyboardMarkup:
-        """Действия с конкретной записью"""
+        """Действия с записью"""
         keyboard = [
             [
                 InlineKeyboardButton(
@@ -828,19 +879,6 @@ class Keyboards:
         ]
         return InlineKeyboardMarkup(keyboard)
 
-# ============================================================================
-# СОСТОЯНИЯ РАЗГОВОРА
-# ============================================================================
-
-(
-    SELECTING_DOCTOR,
-    SELECTING_DATE,
-    SELECTING_TIME,
-    CONFIRMING,
-    GETTING_NAME,
-    GETTING_PHONE,
-    VIEWING_APPOINTMENT
-) = range(7)
 
 # ============================================================================
 # ПЛАНИРОВЩИК НАПОМИНАНИЙ
@@ -893,7 +931,6 @@ class ReminderScheduler:
                     doctor = record.get('Врач')
                     patient = record.get('Пациент')
                     
-                    # Проверяем, что до приема осталось 2 часа
                     try:
                         app_time = datetime.strptime(time, '%H:%M')
                         now = datetime.now()
@@ -922,10 +959,10 @@ class ReminderScheduler:
                                 parse_mode=ParseMode.MARKDOWN
                             )
                             
-                            # Отмечаем отправленное напоминание
-                            self.google_sheets.appointments_sheet.update_cell(
-                                record.index + 2, 11, 
-                                f"Отправлено {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+                            self.google_sheets.mark_reminder_sent(
+                                record.get('Дата'),
+                                record.get('Время'),
+                                telegram_id
                             )
                             
                     except Exception as e:
@@ -934,17 +971,32 @@ class ReminderScheduler:
         except Exception as e:
             print(f"{Emoji.ERROR} Ошибка в напоминаниях: {e}")
 
+
+# ============================================================================
+# СОСТОЯНИЯ РАЗГОВОРА
+# ============================================================================
+
+(
+    SELECTING_DOCTOR,
+    SELECTING_DATE,
+    SELECTING_TIME,
+    CONFIRMING,
+    GETTING_NAME,
+    GETTING_PHONE,
+    VIEWING_APPOINTMENT
+) = range(7)
+
+
 # ============================================================================
 # ОСНОВНОЙ КЛАСС БОТА
 # ============================================================================
 
 class DentalClinicBot:
-    """Бот стоматологической клиники - Премиум версия"""
+    """Бот стоматологической клиники"""
     
     def __init__(self):
         self.config = Config()
         self.keyboards = Keyboards()
-        self.design = DesignSystem()
         self.google_sheets = GoogleSheetsManager()
         self.reminder_scheduler = None
         self.application = None
@@ -967,7 +1019,6 @@ class DentalClinicBot:
         """Приветствие и главное меню"""
         user = update.effective_user
         
-        # Приветственное сообщение с анимацией
         welcome = (
             f"{Emoji.TOOTH * 3}\n"
             f"**Здравствуйте, {user.first_name}!**\n"
@@ -1010,7 +1061,7 @@ class DentalClinicBot:
     # ========================================================================
     
     async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Умный обработчик кнопок"""
+        """Обработчик нажатий на кнопки"""
         query = update.callback_query
         await query.answer()
         
@@ -1028,7 +1079,6 @@ class DentalClinicBot:
         
         # ========== ЗАПИСЬ НА ПРИЕМ ==========
         elif data == 'appointment':
-            # Сбрасываем временные данные
             self.temp_data[user_id] = {}
             
             text = (
@@ -1073,7 +1123,6 @@ class DentalClinicBot:
             doctor_id = data.split('_')[1]
             doctor = self.config.DOCTORS[doctor_id]
             
-            # Сохраняем выбор
             self.temp_data[user_id] = {
                 'doctor_id': doctor_id,
                 'doctor_name': f"{doctor.name} ({doctor.specialty})"
@@ -1108,16 +1157,13 @@ class DentalClinicBot:
         elif data.startswith('date_'):
             date = data.split('_')[1]
             
-            # Сохраняем дату
             if user_id not in self.temp_data:
                 self.temp_data[user_id] = {}
             self.temp_data[user_id]['date'] = date
             
-            # Получаем свободное время
             available_times = self.google_sheets.get_available_slots(date)
             
             if not available_times:
-                # Нет свободного времени
                 await query.edit_message_text(
                     f"{Emoji.CANCEL} **Нет свободного времени**\n\n"
                     f"На выбранную дату все слоты заняты.\n"
@@ -1127,7 +1173,6 @@ class DentalClinicBot:
                 )
                 return SELECTING_DATE
             
-            # Форматируем дату красиво
             date_obj = datetime.strptime(date, '%d.%m.%Y')
             months = {
                 1: 'января', 2: 'февраля', 3: 'марта',
@@ -1156,13 +1201,9 @@ class DentalClinicBot:
             date = parts[1]
             time = parts[2]
             
-            # Сохраняем время
             self.temp_data[user_id]['time'] = time
-            
-            # Получаем информацию о враче
             doctor_name = self.temp_data[user_id].get('doctor_name', '')
             
-            # Красивое отображение даты
             date_obj = datetime.strptime(date, '%d.%m.%Y')
             months = {
                 1: 'января', 2: 'февраля', 3: 'марта',
@@ -1193,10 +1234,6 @@ class DentalClinicBot:
         
         # ========== ПОДТВЕРЖДЕНИЕ ==========
         elif data.startswith('confirm_'):
-            parts = data.split('_')
-            date = parts[1]
-            time = parts[2]
-            
             text = (
                 f"{Emoji.WAITING} **Остался последний шаг**\n\n"
                 
@@ -1221,7 +1258,6 @@ class DentalClinicBot:
                 parse_mode=ParseMode.MARKDOWN
             )
             
-            # Очищаем временные данные
             if user_id in self.temp_data:
                 del self.temp_data[user_id]
                 
@@ -1267,7 +1303,6 @@ class DentalClinicBot:
                     parse_mode=ParseMode.MARKDOWN
                 )
             else:
-                # Фильтруем только подтвержденные
                 active_appointments = [a for a in appointments if a['Статус'] == 'Подтверждена']
                 
                 if not active_appointments:
@@ -1284,7 +1319,6 @@ class DentalClinicBot:
                     text = f"{Emoji.CHECK} **Ваши записи ({len(active_appointments)})**\n\n"
                     
                     for app in active_appointments[:5]:
-                        # Красивое форматирование даты
                         try:
                             dt = datetime.strptime(app['Дата'], '%d.%m.%Y')
                             date_formatted = dt.strftime('%d.%m')
@@ -1294,7 +1328,7 @@ class DentalClinicBot:
                         text += (
                             f"{Emoji.CALENDAR} **{date_formatted}** в **{app['Время']}**\n"
                             f"└ {Emoji.DOCTOR} {app['Врач'].split('(')[0]}\n"
-                            f"└ {Emoji.STATUS_ACTIVE} {app['Статус']}\n\n"
+                            f"└ {Emoji.ACTIVE} {app['Статус']}\n\n"
                         )
                     
                     await query.edit_message_text(
@@ -1318,7 +1352,6 @@ class DentalClinicBot:
                     break
             
             if appointment:
-                # Красивое форматирование даты
                 try:
                     dt = datetime.strptime(date, '%d.%m.%Y')
                     months = {
@@ -1339,7 +1372,7 @@ class DentalClinicBot:
                     f"{Emoji.DOCTOR} **Врач:** {appointment['Врач']}\n"
                     f"{Emoji.USER} **Пациент:** {appointment['Пациент']}\n"
                     f"{Emoji.PHONE} **Телефон:** {appointment['Телефон']}\n"
-                    f"{Emoji.STATUS_ACTIVE} **Статус:** {appointment['Статус']}\n\n"
+                    f"{Emoji.ACTIVE} **Статус:** {appointment['Статус']}\n\n"
                     
                     f"{Emoji.INFO} Если вы не можете прийти, "
                     f"отмените запись заранее"
@@ -1382,7 +1415,6 @@ class DentalClinicBot:
             
             text = f"**❓ {question}**\n\n{answer}"
             
-            # Определяем категорию для кнопки назад
             category = 'about'
             for cat_id, cat in self.config.FAQ_CATEGORIES.items():
                 if question in cat['questions']:
@@ -1495,7 +1527,6 @@ class DentalClinicBot:
         user_id = update.effective_user.id
         name = update.message.text.strip()
         
-        # Валидация
         if len(name) < 5:
             await update.message.reply_text(
                 f"{Emoji.CANCEL} **Слишком короткое имя**\n\n"
@@ -1513,12 +1544,10 @@ class DentalClinicBot:
             )
             return GETTING_NAME
         
-        # Сохраняем имя
         if user_id not in self.temp_data:
             self.temp_data[user_id] = {}
         self.temp_data[user_id]['name'] = name
         
-        # Просим телефон
         await update.message.reply_text(
             f"{Emoji.CHECK} **Отлично, {name.split()[0]}!**\n\n"
             
@@ -1536,10 +1565,8 @@ class DentalClinicBot:
         user_id = update.effective_user.id
         phone_raw = update.message.text.strip()
         
-        # Очищаем телефон от лишних символов
         phone_clean = re.sub(r'[\s\-\(\)]', '', phone_raw)
         
-        # Валидация
         if not re.match(r'^(\+7|8|7)?\d{10}$', phone_clean):
             await update.message.reply_text(
                 f"{Emoji.CANCEL} **Неверный формат телефона**\n\n"
@@ -1552,7 +1579,6 @@ class DentalClinicBot:
             )
             return GETTING_PHONE
         
-        # Приводим к единому формату
         if len(phone_clean) == 10:
             phone = f"+7{phone_clean}"
         elif phone_clean.startswith('8'):
@@ -1562,7 +1588,6 @@ class DentalClinicBot:
         else:
             phone = phone_clean
         
-        # Получаем все данные для записи
         appointment_data = self.temp_data.get(user_id, {})
         
         if not all(k in appointment_data for k in ['doctor_name', 'date', 'time', 'name']):
@@ -1574,7 +1599,6 @@ class DentalClinicBot:
             )
             return ConversationHandler.END
         
-        # Сохраняем запись
         success = self.google_sheets.add_appointment(
             date=appointment_data['date'],
             time=appointment_data['time'],
@@ -1586,7 +1610,6 @@ class DentalClinicBot:
         )
         
         if success:
-            # Форматируем дату для красивого отображения
             try:
                 dt = datetime.strptime(appointment_data['date'], '%d.%m.%Y')
                 months = {
@@ -1599,7 +1622,6 @@ class DentalClinicBot:
             except:
                 date_display = appointment_data['date']
             
-            # Красивое сообщение об успехе
             text = (
                 f"{Emoji.SUCCESS * 3} **ЗАПИСЬ ПОДТВЕРЖДЕНА** {Emoji.SUCCESS * 3}\n\n"
                 
@@ -1625,7 +1647,6 @@ class DentalClinicBot:
                 parse_mode=ParseMode.MARKDOWN
             )
             
-            # Отправляем уведомление админам
             for admin_id in self.config.ADMIN_IDS:
                 try:
                     admin_text = (
@@ -1655,7 +1676,6 @@ class DentalClinicBot:
                 parse_mode=ParseMode.MARKDOWN
             )
         
-        # Очищаем временные данные
         if user_id in self.temp_data:
             del self.temp_data[user_id]
         
@@ -1668,14 +1688,13 @@ class DentalClinicBot:
     def run(self):
         """Запуск бота"""
         try:
-            # Создаем приложение
             self.application = Application.builder().token(self.config.BOT_TOKEN).build()
             
-            # ======== КОМАНДЫ ========
+            # Команды
             self.application.add_handler(CommandHandler('start', self.start))
             self.application.add_handler(CommandHandler('cancel', self.cancel))
             
-            # ======== КОНВЕРСАЦИЯ ЗАПИСИ ========
+            # Конверсация записи
             appointment_conv = ConversationHandler(
                 entry_points=[
                     CallbackQueryHandler(self.button_handler, pattern='^appointment$')
@@ -1711,15 +1730,11 @@ class DentalClinicBot:
             )
             
             self.application.add_handler(appointment_conv)
-            
-            # ======== ОБРАБОТЧИКИ КНОПОК ========
             self.application.add_handler(CallbackQueryHandler(self.button_handler))
             
-            # ======== ПЛАНИРОВЩИК ========
             if self.google_sheets.client:
                 self.reminder_scheduler = ReminderScheduler(self.application.bot, self.google_sheets)
             
-            # ======== ЗАПУСК ========
             print("\n" + "="*60)
             print(f"{Emoji.TOOTH} СТОМАТОЛОГИЧЕСКИЙ БОТ ПРЕМИУМ")
             print("="*60)
@@ -1735,6 +1750,7 @@ class DentalClinicBot:
         except Exception as e:
             print(f"{Emoji.ERROR} Критическая ошибка: {e}")
             raise
+
 
 # ============================================================================
 # ЗАПУСК
