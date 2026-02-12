@@ -1,6 +1,7 @@
 # Environment variables
 .env
 .env.local
+.env.production
 
 # Python
 __pycache__/
@@ -21,12 +22,16 @@ credentials.json
 *.pickle
 token.pickle
 token.json
+service_account.json
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+.DS_Store
+Thumbs.db
 
 # Logs
 *.log
+bot.log
